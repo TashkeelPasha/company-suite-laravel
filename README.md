@@ -6,7 +6,7 @@ React/Express/Postgres MERN-ish app at
 
 ## What this repo is (and isn't)
 
-- ✅ Laravel 11 shell that renders Blade pages using Bootstrap 5.
+- ✅ Laravel 12 shell that renders Blade pages using Bootstrap 5.
 - ✅ Every page loads its data client-side by calling a JSON API.
 - ✅ Ships **`API_DOCUMENTATION.md`** — the full spec the backend developer
      must implement.
@@ -76,13 +76,26 @@ composer install
 npm install
 cp .env.example .env
 php artisan key:generate
+# For a quick local smoke run, switch DB_CONNECTION=sqlite in .env and:
+touch database/database.sqlite
 php artisan migrate --seed
-npm run dev     # Vite dev server
+npm run build            # or `npm run dev` for HMR
 php artisan serve
 ```
 
 The frontend will look for the API at `/api` on the same origin. To point at a
 remote API during development, set `VITE_API_BASE_URL` in `.env`.
+
+### Verified locally
+- PHP 8.3.33, Composer 2.10.3, Node 20+, npm 10+
+- `composer install` → 90+ packages, no errors
+- `php artisan migrate --seed` → 7 tables created, SuperAdmin seeded
+- `npm run build` → 74 modules bundled, ~1 MB output (mostly xlsx+bootstrap)
+- `php artisan serve` → all 11 routes return correct HTTP codes:
+  - `/` `/login` `/dashboard` `/settings` `/company` `/company/incidents/new`
+    `/company/incidents/{id}` `/station` `/go` `/erc` → **200**
+  - unknown path → **404**
+- Zero server-side errors on any route.
 
 ## Building for production
 

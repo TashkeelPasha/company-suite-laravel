@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Response;
 use Illuminate\View\View;
 
 /**
@@ -69,8 +70,8 @@ class PageController
 
     /* 404 ----------------------------------------------------------------- */
 
-    public function notFound(): View
+    public function notFound(): Response
     {
-        return view('errors.404');
+        return response()->view('errors.404', [], 404);
     }
 }
