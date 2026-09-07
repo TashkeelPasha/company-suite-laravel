@@ -120,6 +120,88 @@ RelativeInfoUpdate   = { id, passengerId, teamMemberId, updatedByName,
 - `latestSatStatus` = newest where `teamType = "SAT - Volunteers"`
 - `null` if there are no updates in that bucket
 
+## Database schema
+
+Already scaffolded in `database/migrations/` — `php artisan migrate` creates all 7 tables. Shape reference:
+
+```sql
+super_admins
+  id             bigserial PK
+  email          varchar UNIQUE NOT NULL
+  password_hash  varchar NOT NULL          -- bcrypt
+  remember_token varchar NULL
+
+companies
+  id             bigserial PK
+  name           varchar NOT NULL
+  email          varchar UNIQUE NOT NULL
+  password_hash  varchar NOT NULL          -- bcrypt
+  logo_url       varchar NULL              -- "/api/uploads/{name}"
+  remember_token varchar NULL
+  created_at     timestamptz DEFAULT now()
+
+team_members
+  id             bigserial PK
+  company_id     bigint NOT NULL  → companies(id) ON DELETE CASCADE
+  full_name      varchar NOT NULL
+  email          varchar UNIQUE NOT NULL   -- unique across ALL companies
+  password_hash  varchar NOT NULL          -- bcrypt
+  team_type      varchar NOT NULL          -- "Station Team" | "ERC Team" | "GO Team" | "SAT - Volunteers"
+  remember_token varchar NULL
+  created_at     timestamp DEFAULT now()
+
+incidents
+  id             bigserial PK
+  company_id     bigint NOT NULL  → companies(id) ON DELETE CASCADE
+  flight_number  varchar NOT NULL
+  from_location  varchar NOT NULL
+  to_location    varchar NOT NULL
+  incident_date  date NOT NULL             -- "YYYY-MM-DD"
+  incident_time  varchar NOT NULL          -- "HH:MM"
+  status         varchar NOT NULL DEFAULT 'Ongoing'   -- "Ongoing" | "Operation Completed"
+  created_at     timestamp DEFAULT now()
+
+passengers
+  id             bigserial PK
+  company_id     bigint NOT NULL  → companies(id) ON DELETE CASCADE
+  incident_id    bigint NULL      → incidents(id) ON DELETE CASCADE  -- NULL for legacy passengers
+  name           varchar NOT NULL
+  seat_number    varchar NOT NULL
+  cnic           varchar NULL
+  flight_number  varchar NULL              -- legacy per-passenger fields, only for direct-add
+  from_location  varchar NULL
+  to_location    varchar NULL
+  departure_time timestamp NULL
+  arrival_time   timestamp NULL
+  created_at     timestamp DEFAULT now()
+
+passenger_updates
+  id             bigserial PK
+  passenger_id   bigint NOT NULL  → passengers(id) ON DELETE CASCADE
+  team_member_id bigint NOT NULL  → team_members(id) ON DELETE CASCADE
+  submitted_by   varchar NOT NULL          -- DENORMALISED — copy of full_name at submit time
+  status         varchar NOT NULL          -- Safe | Injured | Critical | Deceased | Unconfirmed
+  remarks        text NULL
+  created_at     timestamp DEFAULT now()
+  INDEX (passenger_id, created_at)         -- for "latest status" lookups
+
+relative_info_updates
+  id                bigserial PK
+  passenger_id      bigint NOT NULL  → passengers(id) ON DELETE CASCADE
+  team_member_id    bigint NOT NULL  → team_members(id) ON DELETE CASCADE
+  updated_by_name   varchar NOT NULL       -- DENORMALISED — copy of full_name at submit time
+  contact_name      varchar NOT NULL
+  relationship      varchar NOT NULL
+  telephone_numbers text NOT NULL          -- free-form: commas / newlines / multiple numbers
+  address           text NULL
+  created_at        timestamp DEFAULT now()
+  INDEX (passenger_id, created_at)
+```
+
+**Cascade summary:** delete a company → wipes its team_members, incidents, passengers, and all updates. Delete a team_member → wipes their `passenger_updates` and `relative_info_updates` rows, **but** `submitted_by` / `updated_by_name` text on other rows survives (that's the whole point of denormalising them).
+
+**Column naming reminder:** DB is `snake_case`, API is `camelCase`. Use a `JsonResource` per model to translate.
+
 ## Default seed
 
 Seeder must create SuperAdmin `admin@companysuite.local` / `ChangeMe1234!` (already scaffolded — `php artisan db:seed`).
