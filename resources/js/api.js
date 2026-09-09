@@ -15,7 +15,9 @@ function csrfToken() {
 async function request(method, path, body, { multipart = false } = {}) {
     const headers = { 'Accept': 'application/json' };
     if (!multipart) headers['Content-Type'] = 'application/json';
-    if (method !== 'GET' && method !== 'HEAD') headers['X-XSRF-TOKEN'] = csrfToken();
+    // Laravel accepts either X-CSRF-TOKEN (raw meta value) or X-XSRF-TOKEN (decrypted cookie).
+    // We use the meta-tag value → must send under X-CSRF-TOKEN, not X-XSRF-TOKEN.
+    if (method !== 'GET' && method !== 'HEAD') headers['X-CSRF-TOKEN'] = csrfToken();
 
     const opts = {
         method,
