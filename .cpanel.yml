@@ -1,0 +1,39 @@
+---
+# cPanel deploy hook — runs when you click "Deploy HEAD Commit" in
+# cPanel → Git Version Control → Manage → Pull or Deploy.
+#
+# The DEPLOYPATH placeholder is automatically set by cPanel to the repo path.
+# All commands run as the cPanel user's shell.
+
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/bsstesting457/repositories/company-suite-laravel
+    - cd $DEPLOYPATH
+
+    # Install PHP deps (production, optimised autoloader)
+    - /usr/local/bin/ea-php83 /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader --no-interaction --no-progress 2>&1 | tail -5
+
+    # Ensure .env exists (only on first deploy; won't overwrite)
+    - test -f .env || cp .env.example .env
+    - test -s .env || /usr/local/bin/ea-php83 artisan key:generate --force
+
+    # Ensure writable dirs exist with correct perms
+    - mkdir -p storage/framework/{sessions,views,cache} storage/logs bootstrap/cache
+    - chmod -R 775 storage bootstrap/cache
+
+    # Storage symlink for public uploads (idempotent — no-ops if exists)
+    - /usr/local/bin/ea-php83 artisan storage:link 2>&1 | tail -3
+
+    # Clear ALL stale caches (this is what fixes the missing-class 503)
+    - /usr/local/bin/ea-php83 artisan optimize:clear 2>&1 | tail -5
+
+    # Rebuild caches for production
+    - /usr/local/bin/ea-php83 artisan config:cache 2>&1 | tail -3
+    - /usr/local/bin/ea-php83 artisan route:cache 2>&1 | tail -3
+    - /usr/local/bin/ea-php83 artisan view:cache 2>&1 | tail -3
+
+    # Migrate the database (safe — --force needed non-interactively)
+    - /usr/local/bin/ea-php83 artisan migrate --force 2>&1 | tail -5
+
+    # Health check — outputs OK if boot succeeds
+    - /usr/local/bin/ea-php83 artisan --version
