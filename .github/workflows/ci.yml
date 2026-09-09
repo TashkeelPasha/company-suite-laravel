@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main, tashkeel, develop, 'feature/**']
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-progress runs when a new commit is pushed to the same branch/PR
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php:
+    name: PHP — lint, install, route resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, pdo_mysql, pdo_pgsql, sqlite3, curl, fileinfo, tokenizer, zip, bcmath, openssl
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.json', 'composer.lock') }}
+          restore-keys: composer-
+
+      - name: composer install
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: PHP syntax lint (every .php file)
+        run: |
+          set -e
+          find app config database routes bootstrap -name '*.php' -print0 \
+            | xargs -0 -n1 php -l
+
+      - name: Prepare .env for boot smoke
+        run: |
+          cp .env.example .env
+          echo "DB_CONNECTION=sqlite" >> .env
+          echo "DB_DATABASE=$(pwd)/database/database.sqlite" >> .env
+          touch database/database.sqlite
+          php artisan key:generate
+
+      - name: artisan route:list — catches missing controllers / class-not-found
+        run: php artisan route:list --except-vendor
+
+      - name: artisan config:cache — catches config errors
+        run: php artisan config:cache
+
+      - name: Migrate (SQLite, ephemeral)
+        run: php artisan migrate --force
+
+  frontend:
+    name: Frontend — vite build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+
+      - name: vite build
+        run: npm run build
+
+      - name: Verify build artefacts
+        run: |
+          test -f public/build/manifest.json || (echo "manifest.json missing"; exit 1)
+          ls -la public/build/assets | head -20

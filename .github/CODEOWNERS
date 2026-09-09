@@ -1,0 +1,26 @@
+# CODEOWNERS — auto-request review from the right person on every PR.
+# Replace @TashkeelPasha and @your-backend-dev with real GitHub usernames.
+
+# Default owner for everything not matched below
+*                              @TashkeelPasha
+
+# Backend (Laravel PHP)
+app/                           @TashkeelPasha
+routes/                        @TashkeelPasha
+database/                      @TashkeelPasha
+config/                        @TashkeelPasha
+bootstrap/                     @TashkeelPasha
+
+# API surface — both teams should agree on changes here
+API.md                         @TashkeelPasha
+API_DOCUMENTATION.md           @TashkeelPasha
+
+# Frontend
+resources/                     @TashkeelPasha
+public/                        @TashkeelPasha
+vite.config.js                 @TashkeelPasha
+package.json                   @TashkeelPasha
+
+# Docs + CI
+.github/                       @TashkeelPasha
+*.md                           @TashkeelPasha

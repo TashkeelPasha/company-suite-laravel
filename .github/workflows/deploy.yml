@@ -1,0 +1,76 @@
+name: Deploy to cPanel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # allow manual re-run from Actions tab
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy → cPanel
+    runs-on: ubuntu-latest
+    # Only run after CI green on the same commit
+    needs: []   # remove [] and add "needs: [ci]" if you want strict gating; see note below
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- 1. Build production assets locally (cPanel has no Node) ----------
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: npm ci + vite build
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      # ---------- 2. Upload built assets to cPanel via SSH ----------
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.CPANEL_SSH_KEY }}
+
+      - name: Trust cPanel host
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p ${{ secrets.CPANEL_SSH_PORT || '22' }} -H ${{ secrets.CPANEL_SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: rsync public/build to cPanel
+        run: |
+          rsync -avz --delete -e "ssh -p ${{ secrets.CPANEL_SSH_PORT || '22' }}" \
+            public/build/ \
+            ${{ secrets.CPANEL_SSH_USER }}@${{ secrets.CPANEL_SSH_HOST }}:${{ secrets.CPANEL_APP_PATH }}/public/build/
+
+      # ---------- 3. Trigger the app-side deploy commands over SSH ----------
+      - name: git pull + composer + artisan on cPanel
+        run: |
+          ssh -p ${{ secrets.CPANEL_SSH_PORT || '22' }} \
+            ${{ secrets.CPANEL_SSH_USER }}@${{ secrets.CPANEL_SSH_HOST }} \
+            "bash -s" << 'EOF'
+          set -e
+          cd ${{ secrets.CPANEL_APP_PATH }}
+          git fetch origin main
+          git reset --hard origin/main
+          composer install --no-dev --optimize-autoloader --no-interaction
+          php artisan migrate --force
+          php artisan optimize:clear
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
+          chmod -R 775 storage bootstrap/cache
+          EOF
+
+      # ---------- 4. Health check ----------
+      - name: Verify /healthz responds
+        run: |
+          sleep 3
+          curl --fail --show-error --max-time 10 \
+            "${{ secrets.APP_URL }}/up" \
+            || (echo "Health check failed"; exit 1)
