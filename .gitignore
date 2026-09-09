@@ -25,3 +25,5 @@ yarn-error.log
 /.fleet
 /database/*.sqlite
 /database/*.sqlite-journal
+company-suite-laravel-tashkeel.zip
+*-tashkeel.zip

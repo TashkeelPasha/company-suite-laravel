@@ -10,7 +10,7 @@ use Illuminate\View\View;
  * client-side from the JSON API. Route params are passed to the view so the
  * JS knows what id to fetch.
  */
-class PageController
+class PageController extends Controller
 {
     public function home(): View
     {
