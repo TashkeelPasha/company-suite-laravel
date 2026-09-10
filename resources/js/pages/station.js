@@ -21,7 +21,7 @@ export async function initStationDashboard() {
     function render(rows) {
         const tbody = document.getElementById('cs-station-tbody');
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="cs-empty">No passengers.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="cs-empty">No passengers.</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(p => `
@@ -29,6 +29,7 @@ export async function initStationDashboard() {
                 <td>${escapeHtml(p.name)}</td>
                 <td>${escapeHtml(p.seatNumber)}</td>
                 <td class="text-muted small">${escapeHtml(p.flightNumber || '')}</td>
+                <td>${escapeHtml(p.cnic)}</td>
                 <td>${statusPill(p.latestStatus)}</td>
                 <td class="text-muted small">${p.latestStatusAt ? fmtDate(p.latestStatusAt) : '—'}</td>
                 <td class="text-end">

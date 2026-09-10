@@ -42,4 +42,6 @@ class Passenger extends Model
     {
         return $this->hasMany(RelativeInfoUpdate::class);
     }
+    
 }
+

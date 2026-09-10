@@ -22,13 +22,14 @@
                         <th>Name</th>
                         <th>Seat</th>
                         <th>Flight</th>
+                        <th>Cnic</th>
                         <th>Latest status</th>
                         <th>Last update</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="cs-station-tbody">
-                    <tr><td colspan="6" class="cs-empty">Loading passengers&hellip;</td></tr>
+                    <tr><td colspan="7" class="cs-empty">Loading passengers&hellip;</td></tr>
                 </tbody>
             </table>
         </div>
