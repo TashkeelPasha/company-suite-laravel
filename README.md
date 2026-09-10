@@ -1,118 +1,81 @@
-# Company Suite — Laravel Frontend
+# Company Suite — Laravel
 
-Blade + Bootstrap 5 + PHP frontend for Company Suite, converted from the original
-React/Express/Postgres MERN-ish app at
-[Amir-bss/Company-Suite](https://github.com/Amir-bss/Company-Suite).
+Airline incident-response management system. Blade + Bootstrap 5 + PHP frontend + Laravel API. Converted from [Amir-bss/Company-Suite](https://github.com/Amir-bss/Company-Suite) (MERN → Laravel 12).
 
-## What this repo is (and isn't)
+**Live:** [https://companysuite.stageserverofbss.com/](https://companysuite.stageserverofbss.com/)
 
-- ✅ Laravel 12 shell that renders Blade pages using Bootstrap 5.
-- ✅ Every page loads its data client-side by calling a JSON API.
-- ✅ Ships **`API_DOCUMENTATION.md`** — the full spec the backend developer
-     must implement.
-- ✅ Ships **`database/migrations/`** — Eloquent-style migrations for the 7 tables.
-- ✅ Ships **role-based auth guards** (`config/auth.php`) for 5 roles.
-- ❌ Does NOT include the API controllers themselves — those are the backend
-     developer's deliverable. They implement everything under `/api/*` as
-     documented.
+---
 
-## Split of responsibilities
+## Start here — pick your path
 
-| | Frontend team (this repo) | Backend developer |
-|---|---|---|
-| Blade views & Bootstrap styling | ✅ | |
-| Client-side JS (fetch, forms, modals) | ✅ | |
-| Client-side role gate (`resources/js/auth-gate.js`) | ✅ | |
-| API endpoint implementations under `/api/*` | | ✅ |
-| Eloquent models, request validation, controllers | | ✅ |
-| Session cookies + CSRF wiring | | ✅ |
-| Database migrations & seeders | scaffolded here | run + own |
-| cPanel deployment | joint | ✅ |
+| I want to… | Read |
+|---|---|
+| **Understand the whole codebase** (architecture, folders, gotchas, workflow) | 📘 **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** — start here |
+| Add or change an API endpoint | 📗 [API.md](API.md) — every endpoint spec + business rules + DB schema |
+| Contribute (branches, PRs, GitHub secrets, rollback) | 📙 [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Deploy or debug cPanel-specific things | 📕 [DEPLOYMENT_CPANEL.md](DEPLOYMENT_CPANEL.md) · [CPANEL_503_FIX.md](CPANEL_503_FIX.md) |
 
-## File map
+---
+
+## Run locally in 60 seconds
+
+```bash
+git clone https://github.com/TashkeelPasha/company-suite-laravel.git
+cd company-suite-laravel
+composer install && npm install
+cp .env.example .env && php artisan key:generate
+touch database/database.sqlite      # SQLite for local
+php artisan migrate --seed          # creates tables + SuperAdmin
+php artisan db:seed --class=TestAccountsSeeder   # optional: 2 companies + 6 team members
+npm run build && php artisan serve  # → http://127.0.0.1:8000
+```
+
+Login: `admin@companysuite.local` / `ChangeMe1234!` (or any test account — password `TestPass123!`)
+
+---
+
+## Push → Deploy in one line
+
+Push to `main` → CI runs → CD auto-deploys to production. That's the whole workflow.
+
+Any other branch → CI runs only, no deploy. Merge into `main` via PR when ready.
+
+Full details: [DEVELOPER_GUIDE.md § 6](DEVELOPER_GUIDE.md#6-deployment-flow--what-happens-when-you-push).
+
+---
+
+## Stack at a glance
+
+- **Backend:** Laravel 12 · PHP 8.3 · SQLite (prod) · session cookies + CSRF (no JWT)
+- **Frontend:** Blade shells + Bootstrap 5 + vanilla JS + Vite
+- **5 auth roles:** SuperAdmin · Company Admin · Station Team · GO Team · ERC Team
+- **48 API endpoints** — all documented in [API.md](API.md)
+- **Deploy:** GitHub Actions → cPanel API (no SSH needed)
+
+---
+
+## Repo map
 
 ```
-API_DOCUMENTATION.md           ← THE deliverable for the backend dev
-HANDOFF_CHECKLIST.md           ← one-page checklist for the backend dev
-DEPLOYMENT_CPANEL.md           ← cPanel deploy notes
-
-app/
-├── Http/
-│   ├── Controllers/PageController.php     — thin, renders Blade shells only
-│   └── Middleware/EnsureRole.php          — server-side role guard (unused by frontend, ready for API)
-└── Models/                                 — 7 Eloquent models (shared with API)
-
-config/auth.php                — 5 guards: superadmin, company, station, go, erc
-
-database/migrations/           — 7 tables
-database/seeders/SuperAdminSeeder.php
-
+app/                     — Controllers (Page + Api), Middleware, Models
+bootstrap/app.php        — 5 auth guards config
+config/{auth,session,database,filesystems}.php
+database/
+├── migrations/          — 7 tables
+└── seeders/             — SuperAdminSeeder + TestAccountsSeeder
+public/
+├── index.php            — Laravel front controller
+├── .htaccess            — routing rewrites
+└── build/               — Vite output (auto-uploaded by CD)
 resources/
-├── views/                     — Blade shells for all 11 pages
-├── sass/app.scss              — Bootstrap 5 import + brand overrides
-└── js/
-    ├── app.js                 — page router (dispatches to per-page module)
-    ├── api.js                 — fetch wrapper with credentials + CSRF
-    ├── auth-gate.js           — client-side role gate (calls /api/auth/whoami)
-    ├── ui.js                  — toast, spinner, status pill helpers
-    ├── topbar.js              — populates topbar user info + logout
-    └── pages/                 — per-page controllers
-        ├── login.js
-        ├── superadmin.js
-        ├── company-dashboard.js
-        ├── company-add-incident.js
-        ├── company-incident-detail.js
-        ├── station.js
-        ├── go.js
-        └── erc.js
-
-routes/web.php                 — 11 GET routes, all render Blade shells
+├── views/               — 11 Blade pages
+├── sass/app.scss        — Bootstrap import
+└── js/                  — api.js, auth-gate.js, ui.js + per-page modules
+routes/
+├── web.php              — 11 Blade routes → PageController
+└── api.php              — ~50 API routes → ApiController
+.github/workflows/       — ci.yml (all branches) + deploy.yml (main only)
+.cpanel.yml              — cPanel deploy hook
 ```
 
-## Running locally
-
-```bash
-composer install
-npm install
-cp .env.example .env
-php artisan key:generate
-# For a quick local smoke run, switch DB_CONNECTION=sqlite in .env and:
-touch database/database.sqlite
-php artisan migrate --seed
-npm run build            # or `npm run dev` for HMR
-php artisan serve
-```
-
-The frontend will look for the API at `/api` on the same origin. To point at a
-remote API during development, set `VITE_API_BASE_URL` in `.env`.
-
-### Verified locally
-- PHP 8.3.33, Composer 2.10.3, Node 20+, npm 10+
-- `composer install` → 90+ packages, no errors
-- `php artisan migrate --seed` → 7 tables created, SuperAdmin seeded
-- `npm run build` → 74 modules bundled, ~1 MB output (mostly xlsx+bootstrap)
-- `php artisan serve` → all 11 routes return correct HTTP codes:
-  - `/` `/login` `/dashboard` `/settings` `/company` `/company/incidents/new`
-    `/company/incidents/{id}` `/station` `/go` `/erc` → **200**
-  - unknown path → **404**
-- Zero server-side errors on any route.
-
-## Building for production
-
-```bash
-composer install --no-dev --optimize-autoloader
-npm ci && npm run build       # writes to public/build
-php artisan config:cache route:cache view:cache
-```
-
-Upload the resulting tree to cPanel per `DEPLOYMENT_CPANEL.md`.
-
-## Deployment shape
-
-Recommended: **single Laravel app on cPanel** hosting BOTH the Blade frontend and
-the JSON API. That means one repo, one deploy, no CORS. The backend dev adds their
-controllers under `routes/api.php` inside this same project.
-
-If instead the API is deployed separately, set `VITE_API_BASE_URL` to its
-absolute URL and enable CORS on the API side (`config/cors.php` + `withCredentials`
-is already handled by `resources/js/api.js`).
+Detailed layout with responsibility for every folder: [DEVELOPER_GUIDE.md § 2](DEVELOPER_GUIDE.md#2-stack--directory-layout).

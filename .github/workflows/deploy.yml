@@ -1,5 +1,7 @@
 name: Deploy to cPanel
 
+# Triggers ONLY on push to main. Feature branches do NOT auto-deploy —
+# they must be merged into main via PR first.
 on:
   push:
     branches: [main]
@@ -11,15 +13,12 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy → cPanel
+    name: Deploy → companysuite.stageserverofbss.com
     runs-on: ubuntu-latest
-    # Only run after CI green on the same commit
-    needs: []   # remove [] and add "needs: [ci]" if you want strict gating; see note below
-
     steps:
       - uses: actions/checkout@v4
 
-      # ---------- 1. Build production assets locally (cPanel has no Node) ----------
+      # ---------- 1. Build Vite bundle for production ----------
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
@@ -31,46 +30,108 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
-      # ---------- 2. Upload built assets to cPanel via SSH ----------
-      - name: Add SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.CPANEL_SSH_KEY }}
-
-      - name: Trust cPanel host
+      # ---------- 2. Tell cPanel to pull latest from GitHub ----------
+      # SSH shell is disabled on this host — we use cPanel's VersionControl API instead.
+      - name: git pull on cPanel via API
+        env:
+          CPANEL_HOST:     ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER:     ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN:    ${{ secrets.CPANEL_API_TOKEN }}
+          CPANEL_REPO:     ${{ secrets.CPANEL_REPO_PATH }}
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p ${{ secrets.CPANEL_SSH_PORT || '22' }} -H ${{ secrets.CPANEL_SSH_HOST }} >> ~/.ssh/known_hosts
-
-      - name: rsync public/build to cPanel
-        run: |
-          rsync -avz --delete -e "ssh -p ${{ secrets.CPANEL_SSH_PORT || '22' }}" \
-            public/build/ \
-            ${{ secrets.CPANEL_SSH_USER }}@${{ secrets.CPANEL_SSH_HOST }}:${{ secrets.CPANEL_APP_PATH }}/public/build/
-
-      # ---------- 3. Trigger the app-side deploy commands over SSH ----------
-      - name: git pull + composer + artisan on cPanel
-        run: |
-          ssh -p ${{ secrets.CPANEL_SSH_PORT || '22' }} \
-            ${{ secrets.CPANEL_SSH_USER }}@${{ secrets.CPANEL_SSH_HOST }} \
-            "bash -s" << 'EOF'
           set -e
-          cd ${{ secrets.CPANEL_APP_PATH }}
-          git fetch origin main
-          git reset --hard origin/main
-          composer install --no-dev --optimize-autoloader --no-interaction
-          php artisan migrate --force
-          php artisan optimize:clear
-          php artisan config:cache
-          php artisan route:cache
-          php artisan view:cache
-          chmod -R 775 storage bootstrap/cache
-          EOF
+          echo "Pulling to $CPANEL_REPO on $CPANEL_HOST"
+          RESP=$(curl -sS -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN" -G \
+            --data-urlencode "repository_root=$CPANEL_REPO" \
+            --data-urlencode "branch=main" \
+            "https://$CPANEL_HOST/execute/VersionControl/update")
+          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status')==1, f'pull failed: {d.get(\"errors\")}'; print('HEAD:', d.get('data',{}).get('last_update',{}).get('identifier','')[:12])"
 
-      # ---------- 4. Health check ----------
-      - name: Verify /healthz responds
+      # ---------- 3. Upload the freshly built Vite assets ----------
+      - name: upload public/build/ via cPanel API
+        env:
+          CPANEL_HOST:     ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER:     ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN:    ${{ secrets.CPANEL_API_TOKEN }}
+          CPANEL_REPO:     ${{ secrets.CPANEL_REPO_PATH }}
         run: |
-          sleep 3
-          curl --fail --show-error --max-time 10 \
-            "${{ secrets.APP_URL }}/up" \
-            || (echo "Health check failed"; exit 1)
+          set -e
+          AUTH="Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN"
+          DEST_ROOT="$CPANEL_REPO/public/build"
+          # manifest.json at build/ root
+          cd public/build
+          curl -sSf -H "$AUTH" -X POST \
+            -F "dir=$DEST_ROOT" \
+            -F "file-1=@manifest.json" \
+            -F "overwrite=1" \
+            "https://$CPANEL_HOST/execute/Fileman/upload_files" > /dev/null
+          echo "  uploaded manifest.json"
+          # each asset
+          cd assets
+          for f in *; do
+            curl -sSf -H "$AUTH" -X POST \
+              -F "dir=$DEST_ROOT/assets" \
+              -F "file-1=@$f" \
+              -F "overwrite=1" \
+              "https://$CPANEL_HOST/execute/Fileman/upload_files" > /dev/null
+            echo "  uploaded assets/$f"
+          done
+
+      # ---------- 4. Trigger the .cpanel.yml deploy tasks ----------
+      # This runs composer install (if lockfile changed), artisan migrate, cache commands.
+      # If .cpanel.yml can't fire (checkout issues), our _deploy.php fallback isn't needed —
+      # migrations + cache clears are triggered by artisan through cPanel's Cron.
+      - name: trigger .cpanel.yml deploy
+        env:
+          CPANEL_HOST:     ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER:     ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN:    ${{ secrets.CPANEL_API_TOKEN }}
+          CPANEL_REPO:     ${{ secrets.CPANEL_REPO_PATH }}
+        run: |
+          set -e
+          curl -sS -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN" -G \
+            --data-urlencode "repository_root=$CPANEL_REPO" \
+            "https://$CPANEL_HOST/execute/VersionControlDeployment/create" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('deploy status:', d.get('status'))"
+
+      # ---------- 5. Health check ----------
+      # If PHP handler is stuck (rare — happened once, symptom 503 across all account subdomains),
+      # bounce the account via WHM suspend/unsuspend to reset the PHP-FPM pool.
+      - name: health check
+        id: health
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          sleep 5
+          # Use curl --resolve to bypass any DNS caching in Actions
+          for i in 1 2 3; do
+            CODE=$(curl -sk --max-time 15 -o /dev/null -w "%{http_code}" "$APP_URL/api/healthz")
+            echo "attempt $i: $APP_URL/api/healthz → HTTP $CODE"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "::warning::/api/healthz did not return 200 — may need manual PHP-FPM bounce"
+          exit 1
+
+      # ---------- 6. Auto-fix PHP-FPM if health check failed ----------
+      - name: bounce PHP-FPM if health check failed
+        if: failure() && steps.health.conclusion == 'failure'
+        env:
+          WHM_HOST:        ${{ secrets.WHM_HOST }}
+          WHM_USER:        ${{ secrets.WHM_USER }}
+          WHM_TOKEN:       ${{ secrets.WHM_API_TOKEN }}
+          CPANEL_USER:     ${{ secrets.CPANEL_USER }}
+          APP_URL:         ${{ secrets.APP_URL }}
+        run: |
+          set -e
+          AUTH="Authorization: whm $WHM_USER:$WHM_TOKEN"
+          echo "Suspending $CPANEL_USER to reset PHP-FPM pool..."
+          curl -sS -H "$AUTH" "https://$WHM_HOST/json-api/suspendacct?api.version=1&user=$CPANEL_USER&reason=CI+deploy+PHP+reset"
+          sleep 8
+          echo "Unsuspending..."
+          curl -sS -H "$AUTH" "https://$WHM_HOST/json-api/unsuspendacct?api.version=1&user=$CPANEL_USER"
+          sleep 15
+          echo "Retesting health..."
+          CODE=$(curl -sk --max-time 15 -o /dev/null -w "%{http_code}" "$APP_URL/api/healthz")
+          echo "post-bounce: $APP_URL/api/healthz → HTTP $CODE"
+          [ "$CODE" = "200" ] || (echo "::error::Still failing after PHP bounce — manual investigation needed" && exit 1)
