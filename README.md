@@ -11,6 +11,7 @@ Airline incident-response management system. Blade + Bootstrap 5 + PHP frontend 
 | I want to… | Read |
 |---|---|
 | **Understand the whole codebase** (architecture, folders, gotchas, workflow) | 📘 **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** — start here |
+| **Fix a bug — the right way, before pushing** | 🐛 **[LOCAL_TESTING.md](LOCAL_TESTING.md)** — the 6-step reproduction-first loop |
 | Add or change an API endpoint | 📗 [API.md](API.md) — every endpoint spec + business rules + DB schema |
 | Contribute (branches, PRs, GitHub secrets, rollback) | 📙 [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Deploy or debug cPanel-specific things | 📕 [DEPLOYMENT_CPANEL.md](DEPLOYMENT_CPANEL.md) · [CPANEL_503_FIX.md](CPANEL_503_FIX.md) |
