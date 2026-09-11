@@ -10,8 +10,9 @@
 /bootstrap/cache/*
 !/bootstrap/cache/.gitkeep
 /vendor
-composer.lock
-package-lock.json
+# NOTE: composer.lock and package-lock.json ARE committed — they lock exact
+# dependency versions so CI, local, and prod install the same tree. Removing
+# them made CI fail on "Setup Node 20" (cache: 'npm' requires a lock file).
 .env
 .env.backup
 .phpunit.result.cache
