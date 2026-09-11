@@ -1,12 +1,17 @@
 name: Deploy to cPanel
 
-# Triggers ONLY on push to main. Feature branches do NOT auto-deploy —
-# they must be merged into main via PR first.
+# Deploys on push to EITHER `main` or `tashkeel`. Whichever branch was pushed
+# gets pulled to production and served. Both are treated as production branches
+# so the dev team can push to `tashkeel` as their daily workflow.
+#
+# Feature branches (feature/*, fix/*, chore/*) do NOT auto-deploy — CI still
+# runs so they know the change is safe. Merge/PR into `main` or `tashkeel` to ship.
 on:
   push:
-    branches: [main]
+    branches: [main, tashkeel]
   workflow_dispatch:   # allow manual re-run from Actions tab
 
+# Serialize deploys — never run two at once against the same production.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -17,6 +22,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Determine deploying branch
+        id: branch
+        run: |
+          BRANCH=${GITHUB_REF##*/}
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "→ Deploying branch: $BRANCH"
 
       # ---------- 1. Build Vite bundle for production ----------
       - name: Setup Node 20
@@ -32,18 +44,21 @@ jobs:
 
       # ---------- 2. Tell cPanel to pull latest from GitHub ----------
       # SSH shell is disabled on this host — we use cPanel's VersionControl API instead.
+      # The API's `branch` param does both checkout+pull, so pushing to `tashkeel`
+      # correctly switches production to that branch.
       - name: git pull on cPanel via API
         env:
           CPANEL_HOST:     ${{ secrets.CPANEL_HOST }}
           CPANEL_USER:     ${{ secrets.CPANEL_USER }}
           CPANEL_TOKEN:    ${{ secrets.CPANEL_API_TOKEN }}
           CPANEL_REPO:     ${{ secrets.CPANEL_REPO_PATH }}
+          BRANCH:          ${{ steps.branch.outputs.branch }}
         run: |
           set -e
-          echo "Pulling to $CPANEL_REPO on $CPANEL_HOST"
+          echo "Pulling $BRANCH into $CPANEL_REPO on $CPANEL_HOST"
           RESP=$(curl -sS -H "Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN" -G \
             --data-urlencode "repository_root=$CPANEL_REPO" \
-            --data-urlencode "branch=main" \
+            --data-urlencode "branch=$BRANCH" \
             "https://$CPANEL_HOST/execute/VersionControl/update")
           echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status')==1, f'pull failed: {d.get(\"errors\")}'; print('HEAD:', d.get('data',{}).get('last_update',{}).get('identifier','')[:12])"
 
@@ -78,9 +93,7 @@ jobs:
           done
 
       # ---------- 4. Trigger the .cpanel.yml deploy tasks ----------
-      # This runs composer install (if lockfile changed), artisan migrate, cache commands.
-      # If .cpanel.yml can't fire (checkout issues), our _deploy.php fallback isn't needed —
-      # migrations + cache clears are triggered by artisan through cPanel's Cron.
+      # Runs composer install (if lockfile changed), artisan migrate, cache commands.
       - name: trigger .cpanel.yml deploy
         env:
           CPANEL_HOST:     ${{ secrets.CPANEL_HOST }}
@@ -95,25 +108,23 @@ jobs:
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('deploy status:', d.get('status'))"
 
       # ---------- 5. Health check ----------
-      # If PHP handler is stuck (rare — happened once, symptom 503 across all account subdomains),
-      # bounce the account via WHM suspend/unsuspend to reset the PHP-FPM pool.
       - name: health check
         id: health
         env:
           APP_URL: ${{ secrets.APP_URL }}
         run: |
           sleep 5
-          # Use curl --resolve to bypass any DNS caching in Actions
           for i in 1 2 3; do
             CODE=$(curl -sk --max-time 15 -o /dev/null -w "%{http_code}" "$APP_URL/api/healthz")
             echo "attempt $i: $APP_URL/api/healthz → HTTP $CODE"
             [ "$CODE" = "200" ] && exit 0
             sleep 5
           done
-          echo "::warning::/api/healthz did not return 200 — may need manual PHP-FPM bounce"
+          echo "::warning::/api/healthz did not return 200 — may need PHP-FPM bounce"
           exit 1
 
       # ---------- 6. Auto-fix PHP-FPM if health check failed ----------
+      # If PHP handler is stuck (all subdomains 503), suspend+unsuspend the account.
       - name: bounce PHP-FPM if health check failed
         if: failure() && steps.health.conclusion == 'failure'
         env:
@@ -131,7 +142,6 @@ jobs:
           echo "Unsuspending..."
           curl -sS -H "$AUTH" "https://$WHM_HOST/json-api/unsuspendacct?api.version=1&user=$CPANEL_USER"
           sleep 15
-          echo "Retesting health..."
           CODE=$(curl -sk --max-time 15 -o /dev/null -w "%{http_code}" "$APP_URL/api/healthz")
           echo "post-bounce: $APP_URL/api/healthz → HTTP $CODE"
-          [ "$CODE" = "200" ] || (echo "::error::Still failing after PHP bounce — manual investigation needed" && exit 1)
+          [ "$CODE" = "200" ] || (echo "::error::Still failing after PHP bounce" && exit 1)

@@ -225,11 +225,19 @@ Each per-page module in `resources/js/pages/` exports an `init<Page>()` function
 | Branch | Trigger | Result |
 |---|---|---|
 | `main` | Push (direct or merge) | **CI runs → CD auto-deploys** to production |
+| `tashkeel` | Push (direct or merge) | **CI runs → CD auto-deploys** to production (same site as main) |
 | `develop` | Push | CI runs only. No deploy. |
-| `feature/*` | Push | CI runs only. No deploy. |
+| `feature/*`, `fix/*`, `chore/*` | Push | CI runs only. No deploy. |
 | Any other | Push | CI runs only. No deploy. |
 
-**All merges to `main` should go through a PR.** Branch protection should be enabled on GitHub for `main` requiring CI green + review before merge. See `CONTRIBUTING.md`.
+Both `main` and `tashkeel` deploy to the SAME production URL — whichever branch was most recently pushed is what's live. The dev team's daily workflow is push to `tashkeel`; `main` exists as a stable/release mirror. If both branches diverge, the last push wins.
+
+**Recommended pattern:**
+- Team pushes daily work to `tashkeel` → auto-deploys
+- When a release is stable, fast-forward `main` from `tashkeel` (`git checkout main && git merge --ff-only tashkeel && git push`)
+- Feature branches → PR into `tashkeel` (or `main`), CI blocks merge until green
+
+Branch protection SHOULD be enabled on `main` (require PR + CI green). See `CONTRIBUTING.md`.
 
 ### CI (`.github/workflows/ci.yml`) — runs on every push + PR
 
