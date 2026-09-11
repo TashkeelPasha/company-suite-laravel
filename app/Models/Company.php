@@ -6,10 +6,11 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Laravel\Sanctum\HasApiTokens;
 
 class Company extends Model implements Authenticatable
 {
-    use AuthenticatableTrait;
+    use AuthenticatableTrait, HasApiTokens;
 
     protected $table = 'companies';
     public $timestamps = false;   // only created_at, managed by DB default
