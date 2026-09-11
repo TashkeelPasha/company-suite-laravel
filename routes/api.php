@@ -65,22 +65,29 @@ Route::middleware('web')->group(function () {
     Route::get('/uploads/{filename}', [ApiController::class, 'serveUpload'])->where('filename', '[A-Za-z0-9._-]+');
 });
 
-    Route::prefix('mobile')->group(function () {
-        Route::post('/auth/superadmin/login', [MobileApiController::class, 'superadminLogin']);
-        Route::post('/auth/company/login', [MobileApiController::class, 'companyLogin']);
-        Route::post('/auth/station/login', [MobileApiController::class, 'stationLogin']);
-        Route::post('/auth/go/login', [MobileApiController::class, 'goLogin']);
-        Route::post('/auth/erc/login', [MobileApiController::class, 'ercLogin']);
+Route::prefix('api/mobile')->group(function () {
+    // NOTE: the following 4 routes are commented until MobileApiController implements them.
+    // Uncomment when Bilal adds:
+    //   - MobileApiController::superadminLogin(Request)
+    //   - MobileApiController::companyLogin(Request)
+    //   - MobileApiController::companies() — SuperAdmin list companies
+    //   - MobileApiController::companyIncidents() — Company Admin list incidents
+    // Route::post('/auth/superadmin/login', [MobileApiController::class, 'superadminLogin']);
+    // Route::post('/auth/company/login', [MobileApiController::class, 'companyLogin']);
 
-        Route::middleware(['auth:sanctum'])->group(function () {
-            Route::get('/auth/me', [MobileApiController::class, 'me']);
-            Route::post('/auth/logout', [MobileApiController::class, 'logout']);
+    Route::post('/auth/station/login', [MobileApiController::class, 'stationLogin']);
+    Route::post('/auth/go/login', [MobileApiController::class, 'goLogin']);
+    Route::post('/auth/erc/login', [MobileApiController::class, 'ercLogin']);
 
-            Route::get('/companies', [MobileApiController::class, 'companies'])->middleware('mobile.role:superadmin');
-            Route::get('/company/incidents', [MobileApiController::class, 'companyIncidents'])->middleware('mobile.role:company');
+    Route::middleware(['auth:sanctum'])->group(function () {
+        Route::get('/auth/me', [MobileApiController::class, 'me']);
+        Route::post('/auth/logout', [MobileApiController::class, 'logout']);
 
-            // Station
-            Route::get('/station/passengers', [MobileApiController::class, 'stationPassengers'])->middleware('mobile.role:station');
+        // Route::get('/companies', [MobileApiController::class, 'companies'])->middleware('mobile.role:superadmin');
+        // Route::get('/company/incidents', [MobileApiController::class, 'companyIncidents'])->middleware('mobile.role:company');
+
+        // Station
+        Route::get('/station/passengers', [MobileApiController::class, 'stationPassengers'])->middleware('mobile.role:station');
             Route::get('/station/passengers/{id}/updates', [MobileApiController::class, 'stationUpdates'])->whereNumber('id')->middleware('mobile.role:station');
             Route::post('/station/passengers/{id}/updates', [MobileApiController::class, 'createStationUpdate'])->whereNumber('id')->middleware('mobile.role:station');
 
