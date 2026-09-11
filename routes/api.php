@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ApiController;
+use App\Http\Controllers\MobileApiController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('web')->group(function () {
@@ -63,3 +64,38 @@ Route::middleware('web')->group(function () {
     Route::post('/uploads', [ApiController::class, 'upload'])->middleware('role:superadmin,company,station,go,erc');
     Route::get('/uploads/{filename}', [ApiController::class, 'serveUpload'])->where('filename', '[A-Za-z0-9._-]+');
 });
+
+    Route::prefix('mobile')->group(function () {
+        Route::post('/auth/superadmin/login', [MobileApiController::class, 'superadminLogin']);
+        Route::post('/auth/company/login', [MobileApiController::class, 'companyLogin']);
+        Route::post('/auth/station/login', [MobileApiController::class, 'stationLogin']);
+        Route::post('/auth/go/login', [MobileApiController::class, 'goLogin']);
+        Route::post('/auth/erc/login', [MobileApiController::class, 'ercLogin']);
+
+        Route::middleware(['auth:sanctum'])->group(function () {
+            Route::get('/auth/me', [MobileApiController::class, 'me']);
+            Route::post('/auth/logout', [MobileApiController::class, 'logout']);
+
+            Route::get('/companies', [MobileApiController::class, 'companies'])->middleware('mobile.role:superadmin');
+            Route::get('/company/incidents', [MobileApiController::class, 'companyIncidents'])->middleware('mobile.role:company');
+
+            // Station
+            Route::get('/station/passengers', [MobileApiController::class, 'stationPassengers'])->middleware('mobile.role:station');
+            Route::get('/station/passengers/{id}/updates', [MobileApiController::class, 'stationUpdates'])->whereNumber('id')->middleware('mobile.role:station');
+            Route::post('/station/passengers/{id}/updates', [MobileApiController::class, 'createStationUpdate'])->whereNumber('id')->middleware('mobile.role:station');
+
+            // GO
+            Route::get('/go/incidents', [MobileApiController::class, 'goIncidents'])->middleware('mobile.role:go');
+            Route::get('/go/incidents/{id}/passengers', [MobileApiController::class, 'goIncident'])->whereNumber('id')->middleware('mobile.role:go');
+            Route::get('/go/passengers/{id}/updates', [MobileApiController::class, 'goUpdates'])->whereNumber('id')->middleware('mobile.role:go');
+            Route::post('/go/passengers/{id}/updates', [MobileApiController::class, 'createGoUpdate'])->whereNumber('id')->middleware('mobile.role:go');
+
+            // ERC
+            Route::get('/erc/incidents', [MobileApiController::class, 'ercIncidents'])->middleware('mobile.role:erc');
+            Route::get('/erc/incidents/{id}/passengers', [MobileApiController::class, 'ercIncident'])->whereNumber('id')->middleware('mobile.role:erc');
+            Route::get('/erc/passengers/{id}/relative-info', [MobileApiController::class, 'relativeInfo'])->whereNumber('id')->middleware('mobile.role:erc');
+            Route::post('/erc/passengers/{id}/relative-info', [MobileApiController::class, 'createRelativeInfo'])->whereNumber('id')->middleware('mobile.role:erc');
+            Route::get('/erc/passengers/{id}/updates', [MobileApiController::class, 'ercUpdates'])->whereNumber('id')->middleware('mobile.role:erc');
+            });
+        });
+ 
