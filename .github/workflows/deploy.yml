@@ -124,6 +124,51 @@ jobs:
             "https://$CPANEL_HOST/execute/VersionControlDeployment/create" \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('deploy status:', d.get('status'))"
 
+      # ---------- 4b. Force Laravel cache rebuild ----------
+      # .cpanel.yml sometimes doesn't reliably re-cache after a git pull. If a new
+      # route was added and cache still points at old, that route 404s. Bulletproof by
+      # uploading a tiny PHP helper that calls Kernel::call('route:cache') etc.,
+      # hitting it once, then emptying the file.
+      - name: rebuild Laravel caches via helper
+        env:
+          CPANEL_HOST:     ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER:     ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN:    ${{ secrets.CPANEL_API_TOKEN }}
+          CPANEL_REPO:     ${{ secrets.CPANEL_REPO_PATH }}
+          APP_URL:         ${{ secrets.APP_URL }}
+        run: |
+          set -e
+          HOST=$(echo -n "$CPANEL_HOST" | tr -d '[:space:]' | sed -E 's|^https?://||; s|/$||')
+          REPO=$(echo -n "$CPANEL_REPO" | tr -d '[:space:]')
+          AUTH="Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN"
+          # Random one-shot token so nobody else can hit the helper
+          T=$(openssl rand -hex 8)
+          cat > /tmp/_rc.php <<PHP
+          <?php
+          if ((\$_GET['t']??'') !== '$T') { http_response_code(403); exit; }
+          header('Content-Type:text/plain');
+          \$r = realpath(__DIR__.'/..'); chdir(\$r);
+          require \$r.'/vendor/autoload.php';
+          \$a = require_once \$r.'/bootstrap/app.php';
+          \$k = \$a->make(\Illuminate\Contracts\Console\Kernel::class); \$k->bootstrap();
+          foreach(['optimize:clear','config:cache','route:cache','view:cache'] as \$c){
+              ob_start(); \$rc = \$k->call(\$c); ob_end_clean();
+              echo "\$c: exit=\$rc\n";
+          }
+          PHP
+          cd /tmp
+          curl -sSf -H "$AUTH" -X POST -F "dir=$REPO/public" -F "file-1=@_rc.php" -F "overwrite=1" \
+            "https://$HOST/execute/Fileman/upload_files" > /dev/null
+          echo "→ helper uploaded, firing..."
+          curl -sk --max-time 30 "$APP_URL/_rc.php?t=$T"
+          echo ""
+          echo "→ emptying helper..."
+          curl -sSf -H "$AUTH" -X POST \
+            --data-urlencode "dir=$REPO/public" \
+            --data-urlencode "file=_rc.php" \
+            --data-urlencode "content=" \
+            "https://$HOST/execute/Fileman/save_file_content" > /dev/null
+
       # ---------- 5. Health check ----------
       - name: health check
         id: health
