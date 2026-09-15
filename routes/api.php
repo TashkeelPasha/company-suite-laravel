@@ -93,6 +93,8 @@ Route::prefix('mobile')->group(function () {
         // Route::get('/company/incidents',[MobileApiController::class, 'companyIncidents'])->middleware('mobile.role:company');
 
         // Station
+        Route::get('/station/incidents',                     [MobileApiController::class, 'stationIncidents'])->middleware('mobile.role:station');
+        Route::get('/station/incidents/{id}/passengers',     [MobileApiController::class, 'stationIncident'])->whereNumber('id')->middleware('mobile.role:station');
         Route::get('/station/passengers',                    [MobileApiController::class, 'stationPassengers'])->middleware('mobile.role:station');
         Route::get('/station/passengers/{id}/updates',       [MobileApiController::class, 'stationUpdates'])->whereNumber('id')->middleware('mobile.role:station');
         Route::post('/station/passengers/{id}/updates',      [MobileApiController::class, 'createStationUpdate'])->whereNumber('id')->middleware('mobile.role:station');

@@ -51,6 +51,18 @@ class MobileApiController extends BaseController
                   : $this->error('Passenger not found', 404);
     }
 
+    public function stationIncidents(): JsonResponse
+    {
+        $i = Incident::where('company_id', $this->member()->company_id)->withCount('passengers')->latest('id')->get();
+        return response()->json($i->map(fn ($incident) => $this->incidentJson($incident, true)));
+    }
+
+    public function stationIncident(int $id): JsonResponse
+    {
+        $i = Incident::where('company_id', $this->member()->company_id)->with('passengers')->find($id);
+        return $i ? response()->json($this->incidentWithPassengers($i)) : $this->error('Incident not found', 404);
+    }
+
     public function createStationUpdate(Request $r, int $id): JsonResponse
     { return $this->createStatusUpdate($r, $id); }
 
@@ -135,21 +147,34 @@ class MobileApiController extends BaseController
     // ── PRIVATE HELPERS ──────────────────────────────
 
     private function teamLogin(Request $request, string $role, array $types): JsonResponse
-    {
-        $data = $this->validateData($request, ['email' => 'required|email', 'password' => 'required|string']);
-        $user = TeamMember::where('email', $data['email'])->whereIn('team_type', $types)->first();
+{
+    $data = $this->validateData($request, ['email' => 'required|email', 'password' => 'required|string']);
 
-        if (!$user || !Hash::check($data['password'], $user->password_hash)) {
-            return response()->json(['message' => 'Invalid credentials'], 401);
-        }
+    // Pehle email se user dhoondo (type filter ke bagair) taake invalid_credentials vs role_mismatch differentiate ho sake
+    $user = TeamMember::where('email', $data['email'])->first();
 
-        $token = $user->createToken('mobile')->plainTextToken;
-
+    if (!$user || !Hash::check($data['password'], $user->password_hash)) {
         return response()->json([
-            'token' => $token,
-            'user' => $this->memberJson($user, true) + ['role' => $role],
-        ]);
+            'message' => 'Invalid credentials',
+            'error_code' => 'invalid_credentials',
+        ], 401);
     }
+
+    // Credentials sahi hain, ab check karo ke ye user is role ke allowed types mein aata hai ya nahi
+    if (!in_array($user->team_type, $types, true)) {
+        return response()->json([
+            'message' => 'You are not authorized for this role',
+            'error_code' => 'role_mismatch',
+        ], 401);
+    }
+
+    $token = $user->createToken('mobile')->plainTextToken;
+
+    return response()->json([
+        'token' => $token,
+        'user' => $this->memberJson($user, true) + ['role' => $role],
+    ]);
+}
 
     private function member(): TeamMember
     { return Auth::guard('sanctum')->user(); }
