@@ -15,7 +15,7 @@ class Incident extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'company_id', 'flight_number', 'from_location', 'to_location',
+        'company_id', 'flight_number', 'from_location', 'to_location', 'via', 'other_details',
         'incident_date', 'incident_time', 'status',
     ];
 
@@ -31,6 +31,7 @@ class Incident extends Model
 
     public function passengers(): HasMany
     {
-        return $this->hasMany(Passenger::class);
+        // Manifest order. Explicit, because SQLite otherwise returns rows in whatever index order it picks.
+        return $this->hasMany(Passenger::class)->orderBy('id');
     }
 }

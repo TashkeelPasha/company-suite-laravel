@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\View\View;
 
@@ -66,6 +67,26 @@ class PageController extends Controller
     public function ercDashboard(): View
     {
         return view('erc.dashboard');
+    }
+
+    /* Passenger File (all company / team roles) ----------------------------- */
+
+    public function passengerFile(int $id): View
+    {
+        return view('passengers.show', ['passengerId' => $id]);
+    }
+
+    /* ERP print views ----------------------------------------------------- */
+
+    /** Read by name — the three /print routes have different parameter lists (`scope` is a route default). */
+    public function printForm(Request $request): View
+    {
+        $route = $request->route();
+        return view('print.erp', [
+            'form'  => $route->parameter('form'),
+            'scope' => $route->parameter('scope'),
+            'id'    => $route->parameter('id'),
+        ]);
     }
 
     /* 404 ----------------------------------------------------------------- */

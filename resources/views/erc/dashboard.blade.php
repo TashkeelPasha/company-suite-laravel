@@ -1,111 +1,117 @@
 @extends('layouts.app')
-@section('title', 'ERC Team &middot; Dashboard')
+@section('title', 'Calls & contacts · ERC · Company Suite')
 
 @section('content')
 <div data-cs-role="erc">
-    <div class="d-flex justify-content-between align-items-start flex-wrap mb-3">
+    <div class="cs-page-head">
         <div>
-            <h1 class="cs-page-title h3">ERC Team</h1>
-            <p class="cs-page-subtitle small">Next-of-kin management for ongoing incidents at <span id="cs-company-name">&mdash;</span>.</p>
+            <div class="cs-eyebrow">Emergency Response Centre</div>
+            <h1 class="cs-page-title">Calls &amp; contact persons</h1>
+            <p class="cs-page-subtitle">Ongoing incidents at <span id="cs-company-name">&mdash;</span>. Set one contact person per passenger &mdash; other callers are referred to them.</p>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-xl-3">
+            <div class="cs-card cs-kpi cs-tone-blue">
+                <div class="cs-kpi-icon"><i class="bi bi-broadcast"></i></div>
+                <div><div class="cs-kpi-label">Ongoing incidents</div><div class="cs-kpi-value" id="cs-erc-kpi-incidents">&mdash;</div></div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-3">
+            <div class="cs-card cs-kpi cs-tone-violet">
+                <div class="cs-kpi-icon"><i class="bi bi-people"></i></div>
+                <div><div class="cs-kpi-label">Passengers</div><div class="cs-kpi-value" id="cs-erc-kpi-pax">&mdash;</div></div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-3">
+            <div class="cs-card cs-kpi cs-tone-green">
+                <div class="cs-kpi-icon"><i class="bi bi-telephone-inbound"></i></div>
+                <div><div class="cs-kpi-label">Contact person set</div><div class="cs-kpi-value" id="cs-erc-kpi-set">&mdash;</div></div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-3">
+            <div class="cs-card cs-kpi cs-tone-amber">
+                <div class="cs-kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+                <div><div class="cs-kpi-label">Awaiting contact</div><div class="cs-kpi-value" id="cs-erc-kpi-pending">&mdash;</div></div>
+            </div>
         </div>
     </div>
 
     <div class="row g-4">
-        <div class="col-lg-4">
-            <div class="cs-stat-card p-0 overflow-hidden">
+        <div class="col-lg-4 col-xl-3">
+            <div class="cs-card overflow-hidden">
+                <div class="cs-card-head">
+                    <h2>Ongoing incidents</h2>
+                </div>
                 <div class="p-3 border-bottom">
-                    <input id="cs-erc-incident-search" type="search" class="form-control form-control-sm" placeholder="Search ongoing incidents&hellip;">
+                    <label class="cs-search mb-0 w-100">
+                        <i class="bi bi-search"></i>
+                        <input id="cs-erc-incident-search" type="search" class="form-control form-control-sm" placeholder="Search flight or city…" aria-label="Search incidents">
+                    </label>
                 </div>
-                <div id="cs-erc-incidents-list" style="max-height: 70vh; overflow-y: auto;">
-                    <div class="cs-empty">Loading incidents&hellip;</div>
+                <div id="cs-erc-incidents-list" class="cs-inc-list">
+                    <div class="cs-empty"><span class="spinner-border spinner-border-sm text-primary"></span> Loading incidents&hellip;</div>
                 </div>
             </div>
         </div>
 
-        <div class="col-lg-8">
-            <div class="cs-stat-card" id="cs-erc-detail" hidden>
-                <div class="d-flex justify-content-between align-items-start flex-wrap mb-3">
-                    <div>
-                        <h4 id="cs-erc-inc-title" class="mb-1">&mdash;</h4>
-                        <div class="text-muted small" id="cs-erc-inc-meta"></div>
+        <div class="col-lg-8 col-xl-9">
+            <div id="cs-erc-detail" hidden>
+                <div class="cs-card cs-hero cs-hero-compact">
+                    <div class="d-flex gap-3 align-items-start">
+                        <span class="cs-flight-tile" style="width:46px;height:46px;border-radius:12px;font-size:1.2rem"><i class="bi bi-airplane-fill"></i></span>
+                        <div class="min-w-0 flex-grow-1">
+                            <h2 class="cs-page-title h4 mb-1" id="cs-erc-inc-title">&mdash;</h2>
+                            <div class="cs-page-subtitle" id="cs-erc-inc-meta"></div>
+                        </div>
                     </div>
                 </div>
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Name</th><th>Seat</th><th>CNIC</th>
-                                <th>Latest status</th>
-                                <th>Next-of-kin</th>
-                                <th class="text-end">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="cs-erc-passengers-tbody"><tr><td colspan="6" class="cs-empty">Select an incident.</td></tr></tbody>
-                    </table>
+
+                <div class="alert cs-callout mb-3">
+                    <i class="bi bi-pin-angle"></i>
+                    <div>When a relative calls, open the passenger and <strong>set the contact person</strong>. If one is already set, give updates only to them and ask other callers to contact that person.</div>
+                </div>
+
+                <div class="cs-card overflow-hidden">
+                    <div class="cs-card-head">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <h2 class="me-2">Passengers <span class="cs-count" id="cs-erc-pax-count">0</span></h2>
+                            <div class="cs-filter" role="group" aria-label="Filter passengers">
+                                <button type="button" class="is-active" data-filter="all">All</button>
+                                <button type="button" data-filter="pending">Awaiting contact</button>
+                                <button type="button" data-filter="set">Contact set</button>
+                            </div>
+                        </div>
+                        <label class="cs-search mb-0">
+                            <i class="bi bi-search"></i>
+                            <input id="cs-erc-pax-search" type="search" class="form-control form-control-sm" placeholder="Search name, seat or CNIC…" aria-label="Search passengers">
+                        </label>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table cs-table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Passenger</th>
+                                    <th>Latest status</th>
+                                    <th>Contact person</th>
+                                    <th class="text-end"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="cs-erc-passengers-tbody"><tr><td colspan="4" class="cs-empty">Select an incident.</td></tr></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-            <div class="cs-stat-card cs-empty" id="cs-erc-detail-empty">
-                <i class="bi bi-hand-index-thumb display-6 d-block mb-2"></i>
-                Select an ongoing incident on the left.
+
+            <div class="cs-card cs-empty" id="cs-erc-detail-empty">
+                <i class="bi bi-hand-index-thumb"></i>
+                <div class="cs-empty-title">Choose an incident</div>
+                Select an ongoing incident on the left to see its passengers.
             </div>
         </div>
     </div>
 </div>
 
-{{-- Relative-info modal --}}
-<div class="modal fade" id="ercRelativeModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <form id="cs-erc-relative-form">
-                <div class="modal-header">
-                    <h5 class="modal-title">Next-of-kin &mdash; <span id="cs-erc-relative-name"></span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" id="cs-erc-relative-passenger-id">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Contact name</label>
-                            <input id="cs-erc-contact-name" class="form-control" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Relationship</label>
-                            <input id="cs-erc-relationship" class="form-control" required placeholder="e.g. Wife, Father">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Telephone numbers</label>
-                            <textarea id="cs-erc-phones" class="form-control" rows="2" required
-                                placeholder="+92 300 1234567, +92 21 3456789"></textarea>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Address (optional)</label>
-                            <textarea id="cs-erc-address" class="form-control" rows="2"></textarea>
-                        </div>
-                    </div>
-
-                    <hr>
-                    <h6 class="mb-2">All status updates (read-only)</h6>
-                    <div class="table-responsive" style="max-height: 200px;">
-                        <table class="table table-sm">
-                            <thead class="table-light"><tr><th>When</th><th>Team</th><th>By</th><th>Status</th><th>Remarks</th></tr></thead>
-                            <tbody id="cs-erc-updates-tbody"><tr><td colspan="5" class="text-center text-muted small">&mdash;</td></tr></tbody>
-                        </table>
-                    </div>
-
-                    <h6 class="mb-2 mt-3">Relative-info history</h6>
-                    <div class="table-responsive" style="max-height: 200px;">
-                        <table class="table table-sm">
-                            <thead class="table-light"><tr><th>When</th><th>By</th><th>Contact</th><th>Rel.</th><th>Phones</th></tr></thead>
-                            <tbody id="cs-erc-relative-history-tbody"><tr><td colspan="5" class="text-center text-muted small">&mdash;</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save relative info</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+@include('erp.pif-modal')
 @endsection

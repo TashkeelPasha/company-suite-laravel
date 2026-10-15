@@ -205,20 +205,23 @@ Auth:
 
 ---
 
-### 5.3 Station mobile routes
+### 5.3 Station / SAT mobile routes
 
 - `POST /api/mobile/station/auth/login`
 - `GET /api/mobile/station/auth/me`
 - `POST /api/mobile/station/auth/logout`
 - `GET /api/mobile/station/passengers`
+- `GET /api/mobile/station/passengers/{id}/erp`
 - `GET /api/mobile/station/passengers/{id}/updates`
 - `POST /api/mobile/station/passengers/{id}/updates`
 
 Purpose:
-- Station staff passenger and update actions
+- Station and SAT staff passenger details, manifest review, status updates, and partial PRC answers
+
+SAT volunteers use the Station login and Station routes. Their `teamType` in the login response remains `SAT - Volunteers`.
 
 Auth:
-- `station` role
+- `station` role via Sanctum; this includes Station Team and SAT - Volunteers
 
 ---
 
@@ -229,11 +232,12 @@ Auth:
 - `POST /api/mobile/go/auth/logout`
 - `GET /api/mobile/go/incidents`
 - `GET /api/mobile/go/incidents/{id}/passengers`
+- `GET /api/mobile/go/passengers/{id}/erp`
 - `GET /api/mobile/go/passengers/{id}/updates`
 - `POST /api/mobile/go/passengers/{id}/updates`
 
 Purpose:
-- GO team incident and passenger update workflows
+- GO team incident and passenger details, manifest review, status updates, and partial PRC answers
 
 Auth:
 - `go` role
@@ -355,3 +359,129 @@ Example:
 Do not make Flutter hit the current web routes in [routes/api.php](routes/api.php).
 
 Use a dedicated mobile route layer with token auth. That is the correct long-term design for this project because the app today is intentionally built around session-based browser auth.
+
+---
+
+## 11. GO / Station / SAT passenger workflow
+
+The company remains responsible for entering the passenger manifest (including Excel-imported details). GO, Station, and SAT only read those company fields; they do not update manifest data. Their writable data is a status update (`status`, optional `remarks`) and optional partial ERP-001 Passenger Record Card answers (`prc`). Each successful submission records its team member and timestamp. A passenger detail response includes manifest details, status-update history, and saved PRC versions. Station/SAT responses do not include ERP-002 information-form history; GO follows the existing web view and can see it read-only.
+
+### Read passenger details
+
+```http
+GET /api/mobile/station/passengers/{passengerId}/erp
+GET /api/mobile/go/passengers/{passengerId}/erp
+Authorization: Bearer <token>
+Accept: application/json
+```
+
+Response shape:
+
+```json
+{
+  "incident": {
+    "id": 7,
+    "flightNumber": "EX123",
+    "fromLocation": "LHE",
+    "toLocation": "JED",
+    "via": "DXB",
+    "status": "Ongoing"
+  },
+  "passenger": {
+    "id": 42,
+    "incidentId": 7,
+    "name": "Amina Khan",
+    "seatNumber": "12A",
+    "firstName": "Amina",
+    "lastName": "Khan",
+    "dateOfBirth": "1990-01-02",
+    "nationality": "PK",
+    "passportNumber": "P1234567",
+    "effectiveRoute": {
+      "from": "LHE",
+      "to": "JED",
+      "via": "DXB"
+    },
+    "travellingWith": []
+  },
+  "updates": [],
+  "contactPerson": null,
+  "recordCards": [],
+  "informationForms": []
+}
+```
+
+The passenger object also returns all manifest fields. `recordCards` and `updates` are newest-first. Station/SAT receive an empty `informationForms` array; GO receives the existing read-only PIF data when available.
+
+### Submit status and optional partial PRC answers
+
+Both team roles use the same request shape at their own route:
+
+```http
+POST /api/mobile/station/passengers/{passengerId}/updates
+POST /api/mobile/go/passengers/{passengerId}/updates
+Authorization: Bearer <token>
+Accept: application/json
+Content-Type: application/json
+```
+
+```json
+{
+  "status": "Safe",
+  "remarks": "Passenger contacted",
+  "prc": {
+    "contactMade": true,
+    "contactDetails": "Family notified",
+    "familyAssistOffered": false
+  }
+}
+```
+
+`status` is required and must be `Safe`, `Injured`, `Critical`, `Deceased`, or `Unconfirmed`. `remarks` and `prc` are optional. `prc` can contain only the answers currently known; do not send placeholder answers for fields not known yet. The answers are **merged** onto the passenger's latest card: a field you leave out keeps its current value (including answers saved by another team), and an explicit `null` clears it. When the response has a `recordCard` object, the merged card was saved as a new version — it is the full current card, not only the fields you sent. If no sent answer changed anything, `recordCard` is `null`.
+
+Successful response (`201`):
+
+```json
+{
+  "id": 18,
+  "passengerId": 42,
+  "teamMemberId": 5,
+  "submittedBy": "Station Member",
+  "status": "Safe",
+  "remarks": "Passenger contacted",
+  "createdAt": "2026-10-14T10:30:00.000000Z",
+  "recordCard": {
+    "id": 3,
+    "passengerId": 42,
+    "teamMemberId": 5,
+    "submittedBy": "Station Member",
+    "source": "form",
+    "contactMade": true,
+    "contactDetails": "Family notified",
+    "familyAssistOffered": false,
+    "createdAt": "2026-10-14T10:30:00.000000Z"
+  }
+}
+```
+
+### Verify locally before sharing a response with the Flutter developer
+
+1. Run the focused backend tests:
+
+   ```powershell
+   php artisan test --filter=MobileTeamWorkflowTest
+   ```
+
+2. Start the Laravel server with `php artisan serve`, then use a real Station/SAT or GO team account. Replace the URL, credentials, and passenger ID with the local values. Run the PowerShell commands separately:
+
+   ```powershell
+   $base = 'http://127.0.0.1:8000'
+   $login = Invoke-RestMethod -Method Post -Uri "$base/api/mobile/auth/station/login" -ContentType 'application/json' -Body (@{ email = 'station@example.com'; password = 'your-password' } | ConvertTo-Json)
+   $token = $login.token
+   $headers = @{ Authorization = "Bearer $token"; Accept = 'application/json' }
+   Invoke-RestMethod -Method Get -Uri "$base/api/mobile/station/passengers/42/erp" -Headers $headers
+   ```
+
+3. To test a write, send the sample JSON to the corresponding Station or GO `/updates` route. Share the JSON response body (remove passenger personal/medical details and the bearer token first). Use a non-production/test passenger for write testing.
+
+Expected errors: invalid `status` or PRC fields return `422`; a passenger outside the logged-in member's company returns `404`; a missing/invalid token returns `401`; using a GO token on a Station route (or vice versa) returns `403`.

@@ -2,6 +2,10 @@
 
 namespace Database\Seeders;
 
+use App\Models\Passenger;
+use App\Models\PassengerInformationForm;
+use App\Models\PassengerRecordCard;
+use App\Models\TeamMember;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -91,6 +95,49 @@ class TestAccountsSeeder extends Seeder
             );
         }
 
+        // ---- ERP manifest details (Eloquent, so passport_number gets encrypted) --
+        DB::table('incidents')->where('id', $incidentId)->update(['other_details' => 'QA sample — runway excursion on landing']);
+        $manifest = [
+            '12A' => ['last_name' => 'Smith',   'first_name' => 'John',     'pax_type' => 'M', 'date_of_birth' => '1980-04-12', 'nationality' => 'British',   'pnr' => 'SMT001', 'passport_number' => '533112233', 'contact_numbers' => ['+447700900123']],
+            '12B' => ['last_name' => 'Doe',     'first_name' => 'Jane',     'pax_type' => 'F', 'date_of_birth' => '1982-09-30', 'nationality' => 'British',   'pnr' => 'SMT001', 'passport_number' => '533445566'],
+            '14C' => ['last_name' => 'Khan',    'first_name' => 'Ahmed',    'pax_type' => 'M', 'date_of_birth' => '1975-01-05', 'nationality' => 'Pakistani', 'pnr' => 'KHN002', 'passport_number' => 'AB1234567', 'contact_numbers' => ['+923001234567'], 'nok_name' => 'Bilal Khan', 'nok_relationship' => 'Brother', 'nok_phone' => '+923331234567'],
+            '14D' => ['last_name' => 'Ali',     'first_name' => 'Fatima',   'pax_type' => 'F', 'date_of_birth' => '1979-07-21', 'nationality' => 'Pakistani', 'pnr' => 'KHN002'],
+            '16E' => ['last_name' => 'Brown',   'first_name' => 'Robert',   'pax_type' => 'M', 'date_of_birth' => '1966-11-02', 'nationality' => 'American'],
+            '16F' => ['last_name' => 'Johnson', 'first_name' => 'Sarah',    'pax_type' => 'F', 'date_of_birth' => '1990-02-14', 'nationality' => 'Canadian',  'route_from' => 'Karachi (KHI)', 'route_to' => 'Toronto (YYZ)', 'route_via' => 'Lahore (LHE)'],
+            '18A' => ['last_name' => 'Hassan',  'first_name' => 'Muhammad', 'pax_type' => 'M', 'date_of_birth' => '1988-05-09', 'nationality' => 'Pakistani', 'pnr' => 'HSN003'],
+            '18B' => ['last_name' => 'Malik',   'first_name' => 'Ayesha',   'pax_type' => 'F', 'date_of_birth' => '1991-12-01', 'nationality' => 'Pakistani', 'pnr' => 'HSN003'],
+            '20C' => ['last_name' => 'Wilson',  'first_name' => 'David',    'pax_type' => 'M', 'date_of_birth' => '1972-03-18', 'nationality' => 'Australian'],
+            '20D' => ['last_name' => 'Rehman',  'first_name' => 'Zainab',   'pax_type' => 'C', 'date_of_birth' => '2017-08-25', 'nationality' => 'Pakistani', 'pnr' => 'HSN003'],
+        ];
+        foreach ($manifest as $seat => $fields) {
+            Passenger::where(['incident_id' => $incidentId, 'seat_number' => $seat])->first()?->update($fields);
+        }
+
+        // ---- One sample PRC (Station) and contact person / PIF (ERC) -----------
+        $station = TeamMember::where('email', 'station.a@test.com')->first();
+        $erc     = TeamMember::where('email', 'erc.a@test.com')->first();
+        $john    = Passenger::where(['incident_id' => $incidentId, 'seat_number' => '12A'])->first();
+        $ahmed   = Passenger::where(['incident_id' => $incidentId, 'seat_number' => '14C'])->first();
+        if ($station && $john) {
+            PassengerRecordCard::updateOrCreate(
+                ['passenger_id' => $john->id, 'team_member_id' => $station->id],
+                ['submitted_by' => $station->full_name, 'nok_details' => 'Mary Smith (mother) — +447700900456, 1 High St, Leeds', 'contact_made' => true,
+                 'contact_details' => 'Called his mother from own mobile', 'family_assist_offered' => true, 'family_assist_accepted' => false,
+                 'speaks_english' => true, 'primary_language' => 'English', 'intention_local_address' => true,
+                 'intention_local_address_details' => 'Pearl Continental, Lahore', 'occupation' => 'Engineer']
+            );
+        }
+        if ($erc && $ahmed) {
+            PassengerInformationForm::updateOrCreate(
+                ['passenger_id' => $ahmed->id, 'team_member_id' => $erc->id],
+                ['submitted_by' => $erc->full_name, 'informant_last_name' => 'Khan', 'informant_first_name' => 'Bilal',
+                 'informant_contact_numbers' => ['+923331234567'], 'informant_relationship' => 'Brother', 'informant_is_relative_or_meeter' => true,
+                 'pax_flight_details' => 'AC301 Karachi to Lahore, morning flight', 'informant_languages' => 'Urdu / English',
+                 'informant_contacted_pax' => false, 'has_medical_problem' => true, 'medical_details' => 'Diabetic (insulin)',
+                 'other_information' => 'Scar on left forearm; grey hair; brown eyes']
+            );
+        }
+
         // ---- Sample status updates (so lists aren't empty) -----------------
         $stationMember = DB::table('team_members')->where('email', 'station.a@test.com')->first();
         if ($stationMember) {
@@ -112,6 +159,6 @@ class TestAccountsSeeder extends Seeder
             }
         }
 
-        $this->command?->info('TestAccountsSeeder: seeded 2 companies, 6 team members, 1 incident, 10 passengers, 3 status updates.');
+        $this->command?->info('TestAccountsSeeder: seeded 2 companies, 6 team members, 1 incident, 10 passengers (with ERP manifest data), 1 PRC, 1 PIF, 3 status updates.');
     }
 }

@@ -36,6 +36,9 @@ Route::middleware('web')->group(function () {
     Route::get('/company/incidents/{id}', [ApiController::class, 'companyIncident'])->whereNumber('id')->middleware('role:company');
     Route::patch('/company/incidents/{id}/status', [ApiController::class, 'updateIncidentStatus'])->whereNumber('id')->middleware('role:company');
     Route::post('/company/incidents/{id}/passengers', [ApiController::class, 'bulkPassengers'])->whereNumber('id')->middleware('role:company');
+    Route::get('/company/incidents/{id}/manifest', [ApiController::class, 'companyManifest'])->whereNumber('id')->middleware('role:company');
+    Route::get('/company/passengers/{id}/erp', [ApiController::class, 'companyErp'])->whereNumber('id')->middleware('role:company');
+    Route::patch('/company/passengers/{id}', [ApiController::class, 'updateCompanyPassenger'])->whereNumber('id')->middleware('role:company');
 
     Route::post('/station/auth/login', [ApiController::class, 'stationLogin']);
     Route::post('/station/auth/logout', [ApiController::class, 'stationLogout'])->middleware('role:station');
@@ -43,6 +46,7 @@ Route::middleware('web')->group(function () {
     Route::get('/station/passengers', [ApiController::class, 'stationPassengers'])->middleware('role:station');
     Route::get('/station/passengers/{id}/updates', [ApiController::class, 'stationUpdates'])->whereNumber('id')->middleware('role:station');
     Route::post('/station/passengers/{id}/updates', [ApiController::class, 'createStationUpdate'])->whereNumber('id')->middleware('role:station');
+    Route::get('/station/passengers/{id}/erp', [ApiController::class, 'stationErp'])->whereNumber('id')->middleware('role:station');
 
     Route::post('/go/auth/login', [ApiController::class, 'goLogin']);
     Route::post('/go/auth/logout', [ApiController::class, 'goLogout'])->middleware('role:go');
@@ -51,6 +55,8 @@ Route::middleware('web')->group(function () {
     Route::get('/go/incidents/{id}/passengers', [ApiController::class, 'goIncident'])->whereNumber('id')->middleware('role:go');
     Route::get('/go/passengers/{id}/updates', [ApiController::class, 'goUpdates'])->whereNumber('id')->middleware('role:go');
     Route::post('/go/passengers/{id}/updates', [ApiController::class, 'createGoUpdate'])->whereNumber('id')->middleware('role:go');
+    Route::get('/go/incidents/{id}/manifest', [ApiController::class, 'goManifest'])->whereNumber('id')->middleware('role:go');
+    Route::get('/go/passengers/{id}/erp', [ApiController::class, 'goErp'])->whereNumber('id')->middleware('role:go');
 
     Route::post('/erc/auth/login', [ApiController::class, 'ercLogin']);
     Route::post('/erc/auth/logout', [ApiController::class, 'ercLogout'])->middleware('role:erc');
@@ -60,6 +66,8 @@ Route::middleware('web')->group(function () {
     Route::get('/erc/passengers/{id}/relative-info', [ApiController::class, 'relativeInfo'])->whereNumber('id')->middleware('role:erc');
     Route::post('/erc/passengers/{id}/relative-info', [ApiController::class, 'createRelativeInfo'])->whereNumber('id')->middleware('role:erc');
     Route::get('/erc/passengers/{id}/updates', [ApiController::class, 'ercUpdates'])->whereNumber('id')->middleware('role:erc');
+    Route::get('/erc/passengers/{id}/erp', [ApiController::class, 'ercErp'])->whereNumber('id')->middleware('role:erc');
+    Route::post('/erc/passengers/{id}/pif', [ApiController::class, 'createErcPif'])->whereNumber('id')->middleware('role:erc');
 
     Route::post('/uploads', [ApiController::class, 'upload'])->middleware('role:superadmin,company,station,go,erc');
     Route::get('/uploads/{filename}', [ApiController::class, 'serveUpload'])->where('filename', '[A-Za-z0-9._-]+');
@@ -96,12 +104,14 @@ Route::prefix('mobile')->group(function () {
         Route::get('/station/incidents',                     [MobileApiController::class, 'stationIncidents'])->middleware('mobile.role:station');
         Route::get('/station/incidents/{id}/passengers',     [MobileApiController::class, 'stationIncident'])->whereNumber('id')->middleware('mobile.role:station');
         Route::get('/station/passengers',                    [MobileApiController::class, 'stationPassengers'])->middleware('mobile.role:station');
+        Route::get('/station/passengers/{id}/erp',           [MobileApiController::class, 'stationPassengerErp'])->whereNumber('id')->middleware('mobile.role:station');
         Route::get('/station/passengers/{id}/updates',       [MobileApiController::class, 'stationUpdates'])->whereNumber('id')->middleware('mobile.role:station');
         Route::post('/station/passengers/{id}/updates',      [MobileApiController::class, 'createStationUpdate'])->whereNumber('id')->middleware('mobile.role:station');
 
         // GO
         Route::get('/go/incidents',                          [MobileApiController::class, 'goIncidents'])->middleware('mobile.role:go');
         Route::get('/go/incidents/{id}/passengers',          [MobileApiController::class, 'goIncident'])->whereNumber('id')->middleware('mobile.role:go');
+        Route::get('/go/passengers/{id}/erp',                [MobileApiController::class, 'goPassengerErp'])->whereNumber('id')->middleware('mobile.role:go');
         Route::get('/go/passengers/{id}/updates',            [MobileApiController::class, 'goUpdates'])->whereNumber('id')->middleware('mobile.role:go');
         Route::post('/go/passengers/{id}/updates',           [MobileApiController::class, 'createGoUpdate'])->whereNumber('id')->middleware('mobile.role:go');
 

@@ -4,13 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Incident;
 use App\Models\Passenger;
+use App\Models\PassengerInformationForm;
+use App\Models\PassengerRecordCard;
 use App\Models\PassengerUpdate;
 use App\Models\RelativeInfoUpdate;
 use App\Models\TeamMember;
+use DateTimeInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 
@@ -51,6 +55,13 @@ class MobileApiController extends BaseController
                   : $this->error('Passenger not found', 404);
     }
 
+    public function stationPassengerErp(int $id): JsonResponse
+    {
+        $p = $this->teamPassenger($id);
+        return $p ? response()->json($this->dossierJson($p, true, false))
+                  : $this->error('Passenger not found', 404);
+    }
+
     public function stationIncidents(): JsonResponse
     {
         $i = Incident::where('company_id', $this->member()->company_id)->withCount('passengers')->latest('id')->get();
@@ -84,6 +95,13 @@ class MobileApiController extends BaseController
     {
         $p = $this->teamPassenger($id);
         return $p ? response()->json($p->updates()->latest('id')->get()->map(fn ($u) => $this->updateJson($u)))
+                  : $this->error('Passenger not found', 404);
+    }
+
+    public function goPassengerErp(int $id): JsonResponse
+    {
+        $p = $this->teamPassenger($id);
+        return $p ? response()->json($this->dossierJson($p, true, true))
                   : $this->error('Passenger not found', 404);
     }
 
@@ -199,16 +217,28 @@ class MobileApiController extends BaseController
     {
         $p = $this->teamPassenger($id);
         if (!$p) return $this->error('Passenger not found', 404);
-        $d = $this->validateData($r, ['status' => 'required|in:Safe,Injured,Critical,Deceased,Unconfirmed', 'remarks' => 'nullable|string']);
+        $d = $this->validateData($r, ['status' => 'required|in:Safe,Injured,Critical,Deceased,Unconfirmed', 'remarks' => 'nullable|string', 'prc' => 'nullable|array']
+            + PassengerRecordCard::rules('prc.', true));
         $m = $this->member();
-        $u = PassengerUpdate::create([
-            'passenger_id' => $p->id,
-            'team_member_id' => $m->id,
-            'submitted_by' => $m->full_name,
-            'status' => $d['status'],
-            'remarks' => $d['remarks'] ?? null,
-        ]);
-        return response()->json($this->updateJson($u), 201);
+        $card = null;
+        $u = DB::transaction(function () use ($p, $d, $m, &$card) {
+            $update = PassengerUpdate::create([
+                'passenger_id' => $p->id,
+                'team_member_id' => $m->id,
+                'submitted_by' => $m->full_name,
+                'status' => $d['status'],
+                'remarks' => $d['remarks'] ?? null,
+            ]);
+
+            // Partial answers are merged onto the latest card, so other teams' answers are kept.
+            if (!empty($d['prc'])) $card = PassengerRecordCard::recordAnswers($p, $d['prc'], $m);
+
+            return $update;
+        });
+
+        return response()->json($this->updateJson($u) + [
+            'recordCard' => $card ? $this->recordCardJson($card) : null,
+        ], 201);
     }
 
     private function validateData(Request $r, array $rules): array
@@ -233,7 +263,7 @@ class MobileApiController extends BaseController
 
     private function incidentJson($i, bool $count = false): array
     {
-        $r = ['id' => $i->id, 'companyId' => $i->company_id, 'flightNumber' => $i->flight_number, 'fromLocation' => $i->from_location, 'toLocation' => $i->to_location, 'incidentDate' => $i->incident_date?->format('Y-m-d'), 'incidentTime' => $i->incident_time, 'status' => $i->status, 'createdAt' => $this->dateValue($i->created_at)];
+        $r = ['id' => $i->id, 'companyId' => $i->company_id, 'flightNumber' => $i->flight_number, 'fromLocation' => $i->from_location, 'toLocation' => $i->to_location, 'via' => $i->via, 'otherDetails' => $i->other_details, 'incidentDate' => $i->incident_date?->format('Y-m-d'), 'incidentTime' => $i->incident_time, 'status' => $i->status, 'createdAt' => $this->dateValue($i->created_at)];
         if ($count) $r['passengerCount'] = $i->passengers_count;
         return $r;
     }
@@ -252,6 +282,7 @@ class MobileApiController extends BaseController
 
     private function incidentWithPassengers($i): array
     {
+        $i->passengers->loadCount('recordCards');
         $r = $this->incidentJson($i);
         $r['passengers'] = $i->passengers->map(fn ($p) => $this->incidentPassengerJson($p))->all();
         return $r;
@@ -263,6 +294,7 @@ class MobileApiController extends BaseController
         $latest = fn ($type = null) => $updates->first(fn ($u) => !$type || $u->teamMember?->team_type === $type)?->status;
         return [
             'id' => $p->id, 'name' => $p->name, 'seatNumber' => $p->seat_number, 'cnic' => $p->cnic,
+            'prcCount' => $p->record_cards_count,
             'latestStatus' => $latest(), 'latestGoStatus' => $latest(TeamMember::TYPE_GO),
             'latestStationStatus' => $latest(TeamMember::TYPE_STATION), 'latestSatStatus' => $latest(TeamMember::TYPE_SAT),
             'latestRelativeInfo' => $p->relativeInfoUpdates()->latest('id')->first() ? $this->relativeJson($p->relativeInfoUpdates()->latest('id')->first()) : null,
@@ -279,4 +311,94 @@ class MobileApiController extends BaseController
 
     private function relativeJson($u): array
     { return ['id' => $u->id, 'passengerId' => $u->passenger_id, 'teamMemberId' => $u->team_member_id, 'updatedByName' => $u->updated_by_name, 'contactName' => $u->contact_name, 'relationship' => $u->relationship, 'telephoneNumbers' => $u->telephone_numbers, 'address' => $u->address, 'createdAt' => $this->dateValue($u->created_at)]; }
+
+    private function dossierJson(Passenger $p, bool $withPrc, bool $withPif): array
+    {
+        $incident = $p->incident;
+        $party = $p->incident_id && $p->pnr
+            ? Passenger::where('incident_id', $p->incident_id)->where('pnr', $p->pnr)->where('id', '!=', $p->id)->orderBy('id')->get()
+            : collect();
+        $forms = $p->informationForms()->latest('id')->get();
+        $contact = $forms->first();
+
+        return [
+            'incident' => $incident ? $this->incidentJson($incident) : null,
+            'passenger' => $this->passengerDetailJson($p, $incident, $party),
+            'updates' => $p->updates()->with('teamMember')->latest('id')->get()->map(fn ($u) => $this->updateJson($u, true))->all(),
+            'contactPerson' => $contact ? [
+                'name' => trim($contact->informant_first_name.' '.$contact->informant_last_name),
+                'relationship' => $contact->informant_relationship,
+                'contactNumbers' => $contact->informant_contact_numbers ?? [],
+                'email' => $contact->informant_email,
+                'updatedBy' => $contact->submitted_by,
+                'updatedAt' => $this->dateValue($contact->created_at),
+            ] : null,
+            'recordCards' => $withPrc ? $p->recordCards()->latest('id')->get()->map(fn ($card) => $this->recordCardJson($card))->all() : [],
+            'informationForms' => $withPif ? $forms->map(fn ($form) => $this->informationFormJson($form))->all() : [],
+        ];
+    }
+
+    private function passengerDetailJson(Passenger $p, ?Incident $incident, $travellingWith): array
+    {
+        $fields = [];
+        foreach (Passenger::MANIFEST_FIELDS as $key => $column) {
+            $value = $p->{$column};
+            $fields[$key] = $value instanceof DateTimeInterface ? $value->format('Y-m-d') : $value;
+        }
+
+        $ownRoute = $p->route_from || $p->route_to;
+
+        return ['id' => $p->id, 'incidentId' => $p->incident_id, 'name' => $p->name, 'seatNumber' => $p->seat_number, 'cnic' => $p->cnic]
+            + $fields
+            + [
+                'age' => $p->ageAt($incident?->incident_date),
+                'effectiveRoute' => $ownRoute
+                    ? ['from' => $p->route_from ?? $incident?->from_location, 'to' => $p->route_to ?? $incident?->to_location, 'via' => $p->route_via]
+                    : ['from' => $incident?->from_location ?? $p->from_location, 'to' => $incident?->to_location ?? $p->to_location, 'via' => $p->route_via ?? $incident?->via],
+                'travellingWith' => $travellingWith->map(fn ($other) => [
+                    'id' => $other->id,
+                    'name' => $other->name,
+                    'seatNumber' => $other->seat_number,
+                    'paxType' => $other->pax_type,
+                    'dateOfBirth' => $other->date_of_birth?->format('Y-m-d'),
+                    'nationality' => $other->nationality,
+                ])->values()->all(),
+            ];
+    }
+
+    private function recordCardJson(PassengerRecordCard $card): array
+    {
+        return [
+            'id' => $card->id,
+            'passengerId' => $card->passenger_id,
+            'teamMemberId' => $card->team_member_id,
+            'submittedBy' => $card->submitted_by,
+            'source' => $card->source,
+        ] + $this->fieldsJson($card, PassengerRecordCard::FIELDS) + [
+            'createdAt' => $this->dateValue($card->created_at),
+        ];
+    }
+
+    private function informationFormJson(PassengerInformationForm $form): array
+    {
+        return [
+            'id' => $form->id,
+            'passengerId' => $form->passenger_id,
+            'teamMemberId' => $form->team_member_id,
+            'submittedBy' => $form->submitted_by,
+            'changeReason' => $form->change_reason,
+        ] + $this->fieldsJson($form, PassengerInformationForm::FIELDS) + [
+            'createdAt' => $this->dateValue($form->created_at),
+        ];
+    }
+
+    private function fieldsJson($model, array $map): array
+    {
+        $fields = [];
+        foreach ($map as $key => $column) {
+            $value = $model->{$column};
+            $fields[$key] = $value instanceof DateTimeInterface ? $value->format('Y-m-d') : $value;
+        }
+        return $fields;
+    }
 }

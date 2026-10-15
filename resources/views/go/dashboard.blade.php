@@ -31,15 +31,21 @@
                         <h4 id="cs-go-inc-title" class="mb-1">&mdash;</h4>
                         <div class="text-muted small" id="cs-go-inc-meta"></div>
                     </div>
-                    <span id="cs-go-inc-status" class="cs-status-pill"></span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="cs-go-inc-status" class="cs-status-pill"></span>
+                        <a id="cs-go-print-all" href="#" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="ERP-001 for every passenger — latest saved card, or pre-filled from the manifest">
+                            <i class="bi bi-printer"></i> Print all PRC
+                        </a>
+                    </div>
                 </div>
+                <div class="text-muted small mb-3" id="cs-go-inc-other" hidden></div>
 
                 <div class="table-responsive">
                     <table class="table table-sm align-middle mb-0">
                         <thead class="table-light">
-                            <tr><th>Name</th><th>Seat</th><th>Latest</th><th>Station</th><th>SAT</th><th class="text-end">Actions</th></tr>
+                            <tr><th>Name</th><th>Seat</th><th>Latest</th><th>Station</th><th>SAT</th><th>Contact person</th><th>Print</th><th class="text-end">Actions</th></tr>
                         </thead>
-                        <tbody id="cs-go-passengers-tbody"><tr><td colspan="6" class="cs-empty">Select an incident to load passengers.</td></tr></tbody>
+                        <tbody id="cs-go-passengers-tbody"><tr><td colspan="8" class="cs-empty">Select an incident to load passengers.</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -51,46 +57,5 @@
     </div>
 </div>
 
-{{-- Update status modal (shared markup with Station) --}}
-<div class="modal fade" id="goUpdateStatusModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <form id="cs-go-update-form">
-                <div class="modal-header">
-                    <h5 class="modal-title">Update passenger &mdash; <span id="cs-go-update-name"></span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" id="cs-go-update-passenger-id">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label">Status</label>
-                            <select id="cs-go-update-status" class="form-select" required>
-                                <option>Safe</option><option>Injured</option><option>Critical</option>
-                                <option>Deceased</option><option>Unconfirmed</option>
-                            </select>
-                        </div>
-                        <div class="col-md-8">
-                            <label class="form-label">Remarks (optional)</label>
-                            <input id="cs-go-update-remarks" class="form-control" type="text">
-                        </div>
-                    </div>
-
-                    <hr>
-                    <h6 class="mb-2">Full update history</h6>
-                    <div class="table-responsive" style="max-height: 300px;">
-                        <table class="table table-sm">
-                            <thead class="table-light"><tr><th>When</th><th>By</th><th>Status</th><th>Remarks</th></tr></thead>
-                            <tbody id="cs-go-history-tbody"><tr><td colspan="4" class="text-center text-muted small">&mdash;</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save update</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+@include('erp.update-modal')
 @endsection

@@ -166,12 +166,35 @@ All routes → `ApiController::<method>`. **One controller, all endpoints** — 
 3. **Guard isolation** — no shared login. A SuperAdmin session doesn't authenticate as a Company.
 4. **Multi-tenancy scoping** — every Company/Team endpoint filters by the caller's `companyId`. If you add a new endpoint, remember to scope it.
 5. **Latest-status computation** — for `IncidentPassenger`, `latestStatus` is newest overall; `latestGoStatus` / `latestStationStatus` / `latestSatStatus` are newest filtered by submitter's `team_type`.
+6. **ERP forms (ERP-001 PRC / ERP-002 PIF)** — see below.
+
+### ERP forms — Passenger Record Card (PRC) & Passenger Information Form (PIF)
+
+The airline's paper Emergency Response Plan forms, digitised. Three layers of passenger data:
+
+| Data | Who fills it | Where it lives |
+|---|---|---|
+| ERP-001, Company's part — pre-incident booking data (name split, M/F/C/I, DOB, nationality, PNR, route, phones, passport, Award Plus, booking NOK) | **Company Admin** only — Excel manifest upload, corrections via the edit button | `passengers` columns (`Passenger::MANIFEST_FIELDS`) |
+| ERP-001, team part — NOK, contact made, injury, intentions, family assistance, language, occupation… | **Station / SAT / GO** only — the PRC questions sit inside their status-update window | `passenger_record_cards` |
+| ERP-002 PIF = the passenger's **one contact person** (details, medical, distinguishing marks…) | **ERC** sets it on the first call and edits it later; other callers are referred to that person | `passenger_information_forms` (newest row = current; `change_reason` when replaced) |
+
+- **Append-only.** Saving a PRC/PIF always inserts a new row — the newest is "current", older rows are history (shown as versions on the print page).
+- **Field maps live on the models** (`MANIFEST_FIELDS`, `FIELDS`, `rules()`); `ApiController::columnsFrom()` / `fieldsJson()` translate camelCase ↔ snake_case. Adding a field = migration + map entry + rule + Blade input (`erp/partials/field`) + print renderer in `resources/js/erp.js`.
+- **Each role fills only its own columns.** The Excel template has the Company's columns only; the Company edit form (`PATCH /company/passengers/{id}`) changes `passengers` directly, no history. Station / SAT / GO see the manifest data read-only.
+- **PRC inside status updates:** Station / SAT / GO send `prc` with the update only when an answer was touched; the server saves a new version only if something differs from the latest card. Partial answers are fine — the rest come with later updates.
+- **The printed PRC** combines both parts: manifest data from `passengers` + the latest `passenger_record_cards` row.
+- **One contact person:** `createErcPif` treats a different first/last name as replacing the person and requires `changeReason`; same name = an edit.
+- **Visibility:** Station / SAT → PRC + contact person summary · ERC → PIF + PRC (ongoing incidents only) · GO / Company → everything.
+- **Passenger File** `/passengers/{id}` (`resources/js/pages/passenger-file.js`): status by team, contact person, details, latest PRC and one timeline (updates + PRC versions + contact-person changes); refreshes every 30 s while no form is open. Shared forms: `passenger-form.js` (Company), `update-form.js` (Station / GO), `pif-form.js` (ERC).
+- **Print views** `/print/...` render the paper layout in the browser (Print → Save as PDF). "Print all PRC" prints each passenger's latest card, or a manifest-pre-filled sheet if none is saved.
+- **Excel parsing** is client-side in `resources/js/manifest.js` (header aliases, DD/MM dates, M/F/C/I normalisation, per-row errors). The "Download Excel template" button builds the template from the same column list.
 
 ### Enums (case-sensitive, exact match)
 
 - **TeamType** — `"Station Team"` · `"ERC Team"` · `"GO Team"` · `"SAT - Volunteers"`
 - **PassengerStatus** — `"Safe"` · `"Injured"` · `"Critical"` · `"Deceased"` · `"Unconfirmed"`
 - **IncidentStatus** — `"Ongoing"` · `"Operation Completed"`
+- **PaxType** — `"M"` · `"F"` · `"C"` · `"I"` (Male / Female / Child / Infant — infants may have no seat)
 
 ---
 
@@ -320,6 +343,10 @@ Manually if urgent:
 9. **Never edit existing migrations** — add a new one instead. Migrations run on server via `.cpanel.yml`; editing an old one would try to re-run it and fail.
 
 10. **When Vite rebuild produces new file hashes** (e.g. `app-BsuYxPBg.js` → `app-XyzAbc12.js`), the CD workflow uploads new files but the OLD files stay on the server (accumulating cruft). Occasionally run cleanup via API or File Manager. Not urgent — few KB per deploy.
+
+11. **Never rotate `APP_KEY` on a server with data.** `passengers.passport_number` and `passenger_information_forms.medical_details` use Laravel's `encrypted` cast. A new key makes them undecryptable and every page that loads those rows returns 500. If the key must change, re-encrypt with the old key first.
+
+12. **`Incident::passengers()` is ordered by `id` on purpose.** Without it SQLite returns rows in whatever index order it chooses (the `(incident_id, pnr)` index groups by PNR), which scrambles the manifest order on screen.
 
 ---
 

@@ -6,15 +6,25 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Company Suite')</title>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     @vite(['resources/sass/app.scss', 'resources/js/app.js'])
 </head>
 <body>
 
-    @include('layouts.partials.topbar')
+    {{-- Sidebar + header are filled by resources/js/topbar.js once /api/auth/whoami resolves.
+         Public pages (home, login) never call it, so they keep the plain header only. --}}
+    @include('layouts.partials.sidebar')
 
-    <main class="container-fluid py-4 px-4 px-lg-5">
-        @yield('content')
-    </main>
+    <div class="cs-main">
+        @include('layouts.partials.topbar')
+
+        <main class="cs-content">
+            @yield('content')
+        </main>
+    </div>
 
     @include('layouts.partials.toast')
 

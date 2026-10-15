@@ -1,7 +1,9 @@
 import api from '../api.js';
-import { toast, escapeHtml, statusPill, fmtDate, openModal, closeModal } from '../ui.js';
+import { toast, escapeHtml, statusPill } from '../ui.js';
+import { initUpdateForm } from '../update-form.js';
 import { mountTopbar } from '../topbar.js';
 import { guardPage } from '../auth-gate.js';
+import { contactPersonHtml, routeText } from '../erp.js';
 
 export async function initGoDashboard() {
     const user = await guardPage('go');
@@ -11,6 +13,7 @@ export async function initGoDashboard() {
 
     let incidents = [];
     let selectedInc = null;
+    const openUpdate = initUpdateForm({ prefix: '/go', onSaved: () => selectedInc && loadIncident(selectedInc.id) });
 
     async function loadIncidents() {
         try {
@@ -30,7 +33,7 @@ export async function initGoDashboard() {
                     data-id="${i.id}" style="background: transparent;">
                 <div>
                     <div class="fw-semibold">${escapeHtml(i.flightNumber)}</div>
-                    <div class="small text-muted">${escapeHtml(i.fromLocation)} &rarr; ${escapeHtml(i.toLocation)}<br>${escapeHtml(i.incidentDate)} ${escapeHtml(i.incidentTime)}</div>
+                    <div class="small text-muted">${routeText(i.fromLocation, i.toLocation, i.via)}<br>${escapeHtml(i.incidentDate)} ${escapeHtml(i.incidentTime)}</div>
                 </div>
                 <span class="cs-status-pill cs-status-${i.status.replace(/[^A-Za-z0-9]/g, '-')}">${escapeHtml(i.status)}</span>
             </button>`).join('');
@@ -43,7 +46,11 @@ export async function initGoDashboard() {
             selectedInc = inc;
             document.getElementById('cs-go-detail-empty').hidden = true;
             document.getElementById('cs-go-detail').hidden = false;
-            document.getElementById('cs-go-inc-title').textContent = `${inc.flightNumber} — ${inc.fromLocation} → ${inc.toLocation}`;
+            document.getElementById('cs-go-inc-title').innerHTML = `${escapeHtml(inc.flightNumber)} — ${routeText(inc.fromLocation, inc.toLocation, inc.via)}`;
+            document.getElementById('cs-go-print-all').href = `/print/prc/incidents/${inc.id}`;
+            const other = document.getElementById('cs-go-inc-other');
+            other.hidden = !inc.otherDetails;
+            other.textContent = inc.otherDetails || '';
             document.getElementById('cs-go-inc-meta').textContent = `${inc.incidentDate} ${inc.incidentTime} · ${inc.passengers.length} passengers`;
             const badge = document.getElementById('cs-go-inc-status');
             badge.className = `cs-status-pill cs-status-${inc.status.replace(/[^A-Za-z0-9]/g, '-')}`;
@@ -52,47 +59,27 @@ export async function initGoDashboard() {
             const tbody = document.getElementById('cs-go-passengers-tbody');
             tbody.innerHTML = inc.passengers.map(p => `
                 <tr>
-                    <td>${escapeHtml(p.name)}</td>
+                    <td><a href="/passengers/${p.id}" class="fw-semibold text-decoration-none" title="Open passenger file">${escapeHtml(p.name)}</a></td>
                     <td>${escapeHtml(p.seatNumber)}</td>
                     <td>${statusPill(p.latestStatus)}</td>
                     <td>${statusPill(p.latestStationStatus)}</td>
                     <td>${statusPill(p.latestSatStatus)}</td>
+                    <td class="small">${contactPersonHtml(p.latestPif)}</td>
+                    <td class="text-nowrap">${formLinks(p)}</td>
                     <td class="text-end">
-                        <button class="btn btn-sm btn-primary" data-id="${p.id}" data-name="${escapeHtml(p.name)}">Update</button>
+                        <button class="btn btn-sm btn-primary" data-id="${p.id}" title="Status update + PRC questions">Update</button>
                     </td>
                 </tr>`).join('');
-            tbody.querySelectorAll('button[data-id]').forEach(btn => btn.addEventListener('click', () => openUpdate(btn)));
+            tbody.querySelectorAll('button[data-id]').forEach(btn => btn.addEventListener('click', () => openUpdate(Number(btn.dataset.id))));
         } catch (e) { toast(e.message, 'danger'); }
     }
 
-    async function openUpdate(btn) {
-        const id = Number(btn.dataset.id);
-        document.getElementById('cs-go-update-passenger-id').value = id;
-        document.getElementById('cs-go-update-name').textContent = btn.dataset.name;
-        document.getElementById('cs-go-update-status').value = 'Safe';
-        document.getElementById('cs-go-update-remarks').value = '';
-        openModal('goUpdateStatusModal');
-        try {
-            const hist = await api.get(`/go/passengers/${id}/updates`);
-            const hb = document.getElementById('cs-go-history-tbody');
-            hb.innerHTML = hist.length
-                ? hist.map(u => `<tr><td class="small text-muted">${fmtDate(u.createdAt)}</td><td>${escapeHtml(u.submittedBy)}</td><td>${statusPill(u.status)}</td><td class="small">${escapeHtml(u.remarks || '')}</td></tr>`).join('')
-                : '<tr><td colspan="4" class="text-center text-muted small">No history.</td></tr>';
-        } catch {}
+    /** Print PRC / PIF (PRC answers are given through Update). */
+    function formLinks(p) {
+        const link = (form, count) => `<a class="btn btn-sm ${count ? 'btn-outline-primary' : 'btn-outline-secondary'} py-0" target="_blank" rel="noopener"
+            href="/print/${form}/passengers/${p.id}" title="${count ? `${count} saved` : 'None saved — opens a pre-filled sheet'}">${form.toUpperCase()}${count ? ` ${count}` : ''}</a>`;
+        return `${link('prc', p.prcCount)} ${link('pif', p.pifCount)}`;
     }
-
-    document.getElementById('cs-go-update-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const id      = Number(document.getElementById('cs-go-update-passenger-id').value);
-        const status  = document.getElementById('cs-go-update-status').value;
-        const remarks = document.getElementById('cs-go-update-remarks').value.trim();
-        try {
-            await api.post(`/go/passengers/${id}/updates`, { status, remarks: remarks || undefined });
-            toast('Update recorded');
-            closeModal('goUpdateStatusModal');
-            if (selectedInc) await loadIncident(selectedInc.id);
-        } catch (ex) { toast(ex.message, 'danger'); }
-    });
 
     document.getElementById('cs-go-incident-search').addEventListener('input', (e) => {
         const q = e.target.value.trim().toLowerCase();

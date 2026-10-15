@@ -16,6 +16,7 @@ Build these 48 endpoints. Everything else (Blade, JS, migrations, models) alread
 - **TeamType:** `Station Team` · `ERC Team` · `GO Team` · `SAT - Volunteers`
 - **PassengerStatus:** `Safe` · `Injured` · `Critical` · `Deceased` · `Unconfirmed`
 - **IncidentStatus:** `Ongoing` · `Operation Completed`
+- **PaxType** (M/F/C/I on ERP-001/002): `M` Male · `F` Female · `C` Child · `I` Infant
 
 ## Business rules (non-negotiable)
 
@@ -23,6 +24,9 @@ Build these 48 endpoints. Everything else (Blade, JS, migrations, models) alread
 2. **ERC** endpoints must return **403** when `incident.status = "Operation Completed"`.
 3. Guards are isolated — login on one does not authenticate on any other.
 4. All company/team endpoints must scope by the caller's `companyId` — never trust an ID from the request path if it belongs to another company (return 404).
+5. **ERP forms are append-only.** Every PRC / PIF save is a new row (version history). `submitted_by` is denormalised like rule 1, and `team_member_id` is set to NULL (not cascaded) when the staff account is deleted.
+6. **Who fills which part:** **Company** → the passenger's booking / manifest data only (Excel upload, `PATCH /company/passengers/{id}`) · **Station / SAT / GO** → the PRC answers, inside their status update (`prc` object) · PIF = the passenger's **one contact person**, set and edited by **ERC** (ongoing incidents only, same gate as rule 2); replacing the person needs `changeReason` (422 otherwise) · Station sees the contact person's name / relationship / phones only (`contactPerson`), not the PIF · GO / Company see both.
+7. `passengers.passport_number` and `passenger_information_forms.medical_details` are **encrypted with `APP_KEY`** (Eloquent `encrypted` cast). Never rotate `APP_KEY` on a server that has data.
 
 ## Endpoint table
 
@@ -52,10 +56,10 @@ Build these 48 endpoints. Everything else (Blade, JS, migrations, models) alread
 | 22 | POST | `/company/passengers` | company | `PassengerInput` (all fields, min 1) | `Passenger` 201 | legacy |
 | 23 | DELETE | `/company/passengers/{id}` | company | — | 204 | |
 | 24 | GET | `/company/incidents` | company | — | `Incident[]` (+`passengerCount`) | |
-| 25 | POST | `/company/incidents` | company | `{flightNumber,fromLocation,toLocation,incidentDate,incidentTime}` | `Incident` 201 | default status `Ongoing` |
+| 25 | POST | `/company/incidents` | company | `{flightNumber,fromLocation,toLocation,via?,otherDetails?,incidentDate,incidentTime}` | `Incident` 201 | default status `Ongoing`; `via` = intermediate stop |
 | 26 | GET | `/company/incidents/{id}` | company | — | `IncidentWithPassengers` | 404 |
 | 27 | PATCH | `/company/incidents/{id}/status` | company | `{status}` | `Incident` | 400/404 |
-| 28 | POST | `/company/incidents/{id}/passengers` | company | `{passengers:[{name,seatNumber,cnic?}]}` (min 1) | `{count}` 201 | bulk |
+| 28 | POST | `/company/incidents/{id}/passengers` | company | `{passengers:[ManifestRow]}` (min 1) | `{count}` 201 | bulk Excel upload; old `{name,seatNumber,cnic?}` rows still accepted |
 | 29 | POST | `/station/auth/login` | none | `{email,password}` | `StationTeamMember` | teamType must be `Station Team` or `SAT - Volunteers` |
 | 30 | POST | `/station/auth/logout` | station | — | 204 | |
 | 31 | GET | `/station/auth/me` | station | — | `StationTeamMember` | 401 |
@@ -79,6 +83,20 @@ Build these 48 endpoints. Everything else (Blade, JS, migrations, models) alread
 | 49 | GET | `/erc/passengers/{id}/updates` | erc | — | `PassengerUpdateWithTeam[]` (adds `teamType`) | read-only, 404 |
 | 50 | POST | `/uploads` | any | `multipart form; field=file (image, ≤2MB)` | `{url:"/api/uploads/{name}"}` | 400 |
 | 51 | GET | `/uploads/{filename}` | none | — | file | static |
+| 52 | GET | `/company/incidents/{id}/manifest` | company | — | `IncidentManifest` | 404 |
+| 53 | GET | `/company/passengers/{id}/erp` | company | — | `ErpDossier` (PRC + PIF) | 404 |
+| 54 | GET | `/station/passengers/{id}/erp` | station | — | `ErpDossier` (PRC only, read-only) | 404 |
+| 55 | PATCH | `/company/passengers/{id}` | company | `Partial<ManifestFields> + {seatNumber?, cnic?}` | `PassengerDetail` | 400/404; the Company's part of ERP-001 — only keys sent change |
+
+**Status updates with PRC answers:** `POST /station/passengers/{id}/updates` and `POST /go/passengers/{id}/updates` also accept `prc?: Partial<PrcInput>` (every field optional; manifest data cannot be changed here). A new `PassengerRecordCard` is saved only if an answer differs from the latest card; the response is `PassengerUpdate + { recordCard: PassengerRecordCard|null }`.
+
+**Passenger File (Blade):** `/passengers/{id}` — any company / team role; built from the role's `GET …/passengers/{id}/erp`.
+| 56 | GET | `/go/incidents/{id}/manifest` | go | — | `IncidentManifest` | 404 |
+| 57 | GET | `/go/passengers/{id}/erp` | go | — | `ErpDossier` (PRC + PIF) | 404 |
+| 58 | GET | `/erc/passengers/{id}/erp` | erc | — | `ErpDossier` (PIF + PRC) | 404 if incident completed |
+| 59 | POST | `/erc/passengers/{id}/pif` | erc | `PifInput` | `PassengerInformationForm` 201 | 400; 404 if incident completed |
+
+**Print views (Blade, not API):** `/print/{prc|pif}/blank` · `/print/{prc|pif}/passengers/{id}[?card={formId}]` · `/print/prc/incidents/{id}` (every passenger's latest PRC, or pre-filled from the manifest if none). Any logged-in role; the page calls the viewer's own `erp` / `manifest` endpoint, so the API still decides what is shown.
 
 ## Response shapes
 
@@ -88,14 +106,18 @@ CompanyAdminUser     = { id, name, email, logoUrl:string|null }
 TeamMember           = { id, companyId, fullName, email, teamType, createdAt }
 StationTeamMember    = { id, fullName, email, companyId, companyName, teamType }
 Incident             = { id, companyId, flightNumber, fromLocation, toLocation,
+                         via:string|null, otherDetails:string|null,
                          incidentDate:"YYYY-MM-DD", incidentTime:"HH:MM",
                          status, passengerCount?, createdAt }
 Passenger            = { id, companyId, name, seatNumber, flightNumber?, fromLocation?,
                          toLocation?, departureTime?, arrivalTime?, createdAt,
                          latestStatus?, latestStatusAt? }
-IncidentPassenger    = { id, name, seatNumber, cnic:string|null,
+IncidentPassenger    = { id, name, seatNumber, cnic:string|null, paxType:string|null,
                          latestStatus, latestGoStatus, latestStationStatus, latestSatStatus,
-                         latestRelativeInfo:RelativeInfoUpdate|null, createdAt }
+                         latestRelativeInfo:RelativeInfoUpdate|null,
+                         prcCount, pifCount,
+                         latestPif:{ id, informantName, informantRelationship, createdAt }|null,
+                         createdAt }
 IncidentWithPassengers = Incident + { passengers: IncidentPassenger[] }
 PassengerUpdate      = { id, passengerId, teamMemberId, submittedBy,
                          status, remarks:string|null, createdAt }
@@ -103,6 +125,48 @@ PassengerUpdateWithTeam = PassengerUpdate + { teamType }
 RelativeInfoUpdate   = { id, passengerId, teamMemberId, updatedByName,
                          contactName, relationship, telephoneNumbers,
                          address:string|null, createdAt }
+
+// ---- ERP-001 / ERP-002 --------------------------------------------------
+// Pre-incident data from the Excel manifest. All optional except as noted on row 28.
+ManifestFields       = { lastName, firstName, paxType:"M"|"F"|"C"|"I", dateOfBirth:"YYYY-MM-DD",
+                         nationality, pnr, routeFrom, routeTo, routeVia,
+                         contactNumbers:string[≤3], primaryAddress,
+                         passportNumber, passportIssueDate:"YYYY-MM-DD", passportIssuePlace,
+                         birthPlace, awardPlusNumber, nokName, nokRelationship, nokPhone }
+ManifestRow          = ManifestFields + { name?, seatNumber?, cnic? }
+                       // name required unless firstName/lastName given (stored name = "First Last");
+                       // seatNumber required unless paxType = "I" (infant on lap)
+PassengerDetail      = ManifestFields + { id, incidentId, name, seatNumber, cnic,
+                         age:int|null,                         // at the incident date
+                         effectiveRoute:{from,to,via},          // own route if given, else the incident's
+                         travellingWith:[{id,name,seatNumber,paxType,dateOfBirth,nationality}] }  // same PNR
+IncidentManifest     = Incident + { passengers: (PassengerDetail + { latestRecordCard: PassengerRecordCard|null })[] }
+ErpDossier           = { incident:Incident|null, passenger:PassengerDetail,
+                         updates:PassengerUpdateWithTeam[],          // newest first, every role
+                         contactPerson:{name,relationship,contactNumbers,email,updatedBy,updatedAt}|null,  // latest PIF, every role
+                         recordCards:PassengerRecordCard[],          // newest first
+                         informationForms:PassengerInformationForm[] } // [] when the role may not see them
+
+// Station / SAT / GO part of ERP-001, sent as `prc` with a status update. * = marked on the paper form (not enforced there).
+PrcInput             = { nokDetails*, contactMade*:bool, familyAssistOffered*:bool,
+                         travellingWith?, relativesMeeters?, contactDetails?, localAddress?, otherContacts?,
+                         lifeThreatening?:bool, injuryDetails?,
+                         intentionLocalAddress?:bool, intentionLocalAddressDetails?,
+                         intentionContinueJourney?:bool, intentionContinueJourneyDetails?,
+                         intentionSrc?:bool, intentionOther?,
+                         familyAssistAccepted?:bool, familyAssistTeamAdvised?:bool,
+                         speaksEnglish?:bool, primaryLanguage?, secondaryLanguage?,
+                         occupation?, otherInformation? }
+PassengerRecordCard  = PrcInput + { id, passengerId, teamMemberId:int|null, submittedBy, source:"form", createdAt }
+
+PifInput             = { informantLastName*, informantFirstName*, informantContactNumbers*:string[1..3],
+                         informantRelationship*, informantIsRelativeOrMeeter*:bool,
+                         paxFlightDetails*, informantContactedPax*:bool,
+                         informantAddress?, informantEmail?, informantLanguages?, informantContactDetails?,
+                         travellingWith?, nokDetails?, hasMedicalProblem?:bool, medicalDetails?, otherInformation?,
+                         changeReason? }   // required (422) when the name differs from the current contact person
+PassengerInformationForm = PifInput + { id, passengerId, teamMemberId:int|null, submittedBy, createdAt }
+// * = required (marked * on the paper form)
 ```
 
 ## Times
@@ -122,7 +186,7 @@ RelativeInfoUpdate   = { id, passengerId, teamMemberId, updatedByName,
 
 ## Database schema
 
-Already scaffolded in `database/migrations/` — `php artisan migrate` creates all 7 tables. Shape reference:
+Already scaffolded in `database/migrations/` — `php artisan migrate` creates all 9 tables. Shape reference:
 
 ```sql
 super_admins
@@ -159,6 +223,8 @@ incidents
   incident_date  date NOT NULL             -- "YYYY-MM-DD"
   incident_time  varchar NOT NULL          -- "HH:MM"
   status         varchar NOT NULL DEFAULT 'Ongoing'   -- "Ongoing" | "Operation Completed"
+  via            varchar NULL              -- intermediate stop (ERP header)
+  other_details  text NULL
   created_at     timestamp DEFAULT now()
 
 passengers
@@ -174,6 +240,12 @@ passengers
   departure_time timestamp NULL
   arrival_time   timestamp NULL
   created_at     timestamp DEFAULT now()
+  -- Excel manifest (ERP) fields, all NULL-able:
+  last_name, first_name, pax_type(1), date_of_birth date, nationality, pnr(20),
+  route_from, route_to, route_via, contact_numbers json, primary_address text,
+  passport_number text (ENCRYPTED), passport_issue_date date, passport_issue_place,
+  birth_place, award_plus_number, nok_name, nok_relationship, nok_phone
+  INDEX (incident_id, pnr)                 -- "travelling with"
 
 passenger_updates
   id             bigserial PK
@@ -196,6 +268,22 @@ relative_info_updates
   address           text NULL
   created_at        timestamp DEFAULT now()
   INDEX (passenger_id, created_at)
+
+passenger_record_cards                     -- ERP-001, append-only
+  id, passenger_id → passengers(id) ON DELETE CASCADE
+  team_member_id  bigint NULL → team_members(id) ON DELETE SET NULL
+  submitted_by    varchar NOT NULL         -- DENORMALISED
+  source          varchar(10) DEFAULT 'form'
+  + the PrcInput fields (snake_case, all NULL-able — answers arrive over several updates)
+  created_at, INDEX (passenger_id, created_at)
+
+passenger_information_forms                -- ERP-002, append-only
+  id, passenger_id → passengers(id) ON DELETE CASCADE
+  team_member_id  bigint NULL → team_members(id) ON DELETE SET NULL
+  submitted_by    varchar NOT NULL         -- DENORMALISED
+  informant_contact_numbers json NOT NULL, medical_details text NULL (ENCRYPTED)
+  + the other PifInput fields (snake_case)
+  created_at, INDEX (passenger_id, created_at)
 ```
 
 **Cascade summary:** delete a company → wipes its team_members, incidents, passengers, and all updates. Delete a team_member → wipes their `passenger_updates` and `relative_info_updates` rows, **but** `submitted_by` / `updated_by_name` text on other rows survives (that's the whole point of denormalising them).

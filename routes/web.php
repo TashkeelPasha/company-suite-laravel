@@ -40,5 +40,14 @@ Route::get('/go/{any?}', [PageController::class, 'goDashboard'])->where('any', '
 Route::get('/erc',        [PageController::class, 'ercDashboard'])->name('erc.dashboard');
 Route::get('/erc/{any?}', [PageController::class, 'ercDashboard'])->where('any', '.*');
 
+// Passenger File — any company / team role; JS uses the role's own API prefix.
+Route::get('/passengers/{id}', [PageController::class, 'passengerFile'])->whereNumber('id')->name('passengers.show');
+
+// ERP-001 (PRC) / ERP-002 (PIF) print views — any logged-in role; JS picks the
+// role's own API prefix, so the API still decides what the viewer may see.
+Route::get('/print/{form}/blank',            [PageController::class, 'printForm'])->whereIn('form', ['prc', 'pif'])->defaults('scope', 'blank');
+Route::get('/print/{form}/passengers/{id}',  [PageController::class, 'printForm'])->whereIn('form', ['prc', 'pif'])->whereNumber('id')->defaults('scope', 'passenger');
+Route::get('/print/{form}/incidents/{id}',   [PageController::class, 'printForm'])->whereIn('form', ['prc'])->whereNumber('id')->defaults('scope', 'incident');
+
 // Fallback → 404
 Route::fallback([PageController::class, 'notFound']);

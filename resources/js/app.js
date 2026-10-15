@@ -40,6 +40,18 @@ async function boot() {
         return initCompanyIncidentDetail();
     }
 
+    // Passenger File (every company / team role)
+    if (/^\/passengers\/\d+$/.test(path)) {
+        const { initPassengerFile } = await import('./pages/passenger-file.js');
+        return initPassengerFile();
+    }
+
+    // ERP-001 / ERP-002 print views
+    if (path.startsWith('/print/')) {
+        const { initPrintPage } = await import('./pages/print.js');
+        return initPrintPage();
+    }
+
     // Team dashboards
     if (path.startsWith('/station')) {
         const { initStationDashboard } = await import('./pages/station.js');

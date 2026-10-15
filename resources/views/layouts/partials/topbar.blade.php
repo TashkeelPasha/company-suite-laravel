@@ -1,14 +1,21 @@
-{{-- Topbar populated by JS after /api/auth/whoami resolves. See resources/js/topbar.js --}}
-<nav class="navbar cs-topbar navbar-expand-lg px-3 px-lg-4">
-    <div class="container-fluid">
-        <a class="navbar-brand cs-brand" href="/">Company&nbsp;Suite</a>
+{{-- Header. The user chip is filled by resources/js/topbar.js after /api/auth/whoami resolves. --}}
+<header class="cs-header">
+    <button type="button" class="btn btn-soft btn-icon cs-nav-toggle" id="cs-nav-toggle" aria-label="Open menu">
+        <i class="bi bi-list fs-5"></i>
+    </button>
 
-        <div class="d-flex align-items-center ms-auto" id="cs-topbar-user" hidden>
-            <img id="cs-topbar-logo" class="cs-logo me-2" alt="" hidden>
-            <span id="cs-topbar-name" class="me-3 text-muted small"></span>
-            <button id="cs-topbar-logout" class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-box-arrow-right"></i> Logout
-            </button>
+    <a class="cs-header-brand" href="/">
+        <span class="cs-brand-mark"><i class="bi bi-airplane-fill"></i></span>
+        <span>Company Suite</span>
+    </a>
+    <div class="cs-header-title" id="cs-header-title"></div>
+
+    <div class="cs-user" id="cs-topbar-user" hidden>
+        <img id="cs-topbar-logo" class="cs-logo" alt="" hidden>
+        <span class="cs-avatar cs-avatar-sm" id="cs-topbar-avatar"></span>
+        <div class="cs-user-text">
+            <div class="cs-user-name" id="cs-topbar-name"></div>
+            <div class="cs-user-role" id="cs-topbar-role"></div>
         </div>
     </div>
-</nav>
+</header>
